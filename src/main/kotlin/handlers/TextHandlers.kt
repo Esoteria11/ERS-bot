@@ -18,6 +18,15 @@ import ersbot.services.*
 fun registerTextHandler(dispatcher: Dispatcher) {
     with(dispatcher) {
         text {
+
+            if (message.text?.startsWith("/") == true) {
+                return@text
+            }
+
+            if (!SubscriptionGuard.requireSubscription(bot, message)) {
+                return@text
+            }
+
             val chatId = message.chat.id
             val userText = message.text ?: ""
             val selection = currentSelections[chatId]

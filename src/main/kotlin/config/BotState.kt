@@ -3,6 +3,12 @@ package ersbot.config
 import ersbot.models.*
 import services.fetchCatalogFromSheets
 
+enum class UserState {
+    IDLE,
+    AWAITING_ADDRESS,
+    AWAITING_DATETIME
+}
+
 object BotState {
     val userCarts = mutableMapOf<Long, MutableList<CartItem>>()
     val currentSelections = mutableMapOf<Long, CurrentSelection>()

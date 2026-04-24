@@ -5,9 +5,12 @@ import com.github.kotlintelegrambot.dispatcher.Dispatcher
 import com.github.kotlintelegrambot.dispatcher.callbackQuery
 import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
+import com.github.kotlintelegrambot.entities.KeyboardReplyMarkup
+import com.github.kotlintelegrambot.entities.keyboard.KeyboardButton
 import com.github.kotlintelegrambot.entities.ParseMode
 import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
 import data.ALL_STREETS
+import ersbot.services.*
 import ersbot.config.BotConfig
 import ersbot.config.BotState.activeMenus
 import ersbot.config.BotState.catalog
@@ -16,25 +19,49 @@ import ersbot.config.BotState.userCarts
 import ersbot.config.mainMenuText
 import ersbot.keyboards.*
 import ersbot.models.*
-import ersbot.services.*
 
 fun registerCallbacks(dispatcher: Dispatcher) {
     with(dispatcher) {
-        callbackQuery("stockBtn") {
+
+        callbackQuery("action:check_subscription") {
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
-            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
-            bot.editMessageText(
-                chatId = ChatId.fromId(chatId), messageId = msgId,
-                text = "Вот пост с нашим актуальным наличием товаров 👇\n\nhttps://t.me/c/3744810509/4/79",
-                replyMarkup = InlineKeyboardMarkup.create(
-                    listOf(
-                        listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn"))
+            val userId = callbackQuery.from?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId
+
+            if (SubscriptionService.isUserSubscribed(bot, userId)) {
+                msgId?.let { bot.deleteMessage(ChatId.fromId(chatId), it) }
+
+                bot.sendMessage(
+                    chatId = ChatId.fromId(chatId),
+                    text = "✅ Бот обновлен и готов к работе!",
+                    replyMarkup = KeyboardReplyMarkup(
+                        listOf(
+                            listOf(KeyboardButton("🔄 Перезапустить бота"))
+                        ),
+                        resizeKeyboard = true
                     )
                 )
-            )
+
+                val result = bot.sendMessage(
+                    chatId = ChatId.fromId(chatId),
+                    text = mainMenuText,
+                    replyMarkup = getMainMenuKeyboard(),
+                    parseMode = ParseMode.HTML,
+                    disableWebPagePreview = true
+                )
+
+                result.getOrNull()?.messageId?.let { activeMenus[chatId] = it }
+            } else {
+                bot.answerCallbackQuery(
+                    callbackQueryId = callbackQuery.id!!,
+                    text = "⚠️ Вы не подписаны на канал @ERS",
+                    showAlert = true
+                )
+            }
         }
 
         callbackQuery("questionBtn") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             bot.editMessageText(
@@ -49,6 +76,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("backToMenuBtn") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             currentSelections.remove(chatId)
@@ -63,6 +91,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("checkout") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val cart = userCarts[chatId]
@@ -71,6 +100,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("itemsConfirmedBtn") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
@@ -80,6 +110,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("startDelivery") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             bot.editMessageText(
@@ -96,6 +127,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("del_pickup") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
@@ -106,6 +138,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("del_courier") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
@@ -123,6 +156,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("addr_start") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
@@ -138,6 +172,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("addr_back_to_city") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
@@ -152,6 +187,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("addr_back_to_street") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
@@ -164,6 +200,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("addr_back_to_house") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
@@ -183,6 +220,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("cancelDelivery") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
@@ -197,6 +235,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("submitFinal") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val cart = userCarts[chatId]
@@ -269,6 +308,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("cancelFinal") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             userCarts.remove(chatId)
@@ -289,6 +329,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("orderBtn") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             currentSelections[chatId] = CurrentSelection()
@@ -314,7 +355,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery {
-            val data = callbackQuery.data ?: return@callbackQuery
+            val data = callbackQuery.data
             if (!data.startsWith("street_")) return@callbackQuery
 
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
@@ -342,7 +383,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery {
-            val data = callbackQuery.data ?: return@callbackQuery
+            val data = callbackQuery.data
             if (!data.startsWith("streets_page_")) return@callbackQuery
 
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
@@ -361,7 +402,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         callbackQuery {
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
-            val data = callbackQuery.data ?: return@callbackQuery
+            val data = callbackQuery.data
             val selection = currentSelections[chatId] ?: return@callbackQuery
 
             if (data.startsWith("addr_city_")) {
@@ -444,6 +485,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("addr_confirmed") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
             selection.state = BotState.AWAITING_DATETIME
@@ -459,6 +501,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
         }
 
         callbackQuery("addr_skip_flat") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
             selection.addressInput = selection.addressInput?.copy(flat = null)
@@ -468,4 +511,10 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             }
         }
     }
+}
+
+private fun checkSubAndReturn(bot: Bot, callbackQuery: com.github.kotlintelegrambot.entities.CallbackQuery): Boolean {
+    val chatId = callbackQuery.message?.chat?.id ?: return false
+    val userId = callbackQuery.from.id
+    return SubscriptionGuard.requireSubscriptionForCallback(bot, chatId, userId)
 }

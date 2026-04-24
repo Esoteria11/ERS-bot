@@ -9,10 +9,9 @@ import com.github.kotlintelegrambot.entities.ParseMode
 import ersbot.config.BotState
 import ersbot.config.BotConfig
 import ersbot.config.BotState.activeMenus
-import ersbot.config.BotState.catalog
+import ersbot.services.SubscriptionGuard
 import ersbot.config.mainMenuText
 import ersbot.keyboards.getMainMenuKeyboard
-import services.fetchCatalogFromSheets
 
 fun registerCommands(dispatcher: Dispatcher) {
     with(dispatcher) {
@@ -30,6 +29,11 @@ fun registerCommands(dispatcher: Dispatcher) {
         }
 
         command("start") {
+
+            if (!SubscriptionGuard.requireSubscription(bot, message)) {
+                return@command
+            }
+
             val chatId = message.chat.id
             bot.deleteMessage(ChatId.fromId(chatId), message.messageId)
             BotState.activeMenus[chatId]?.let { bot.deleteMessage(ChatId.fromId(chatId), it) }

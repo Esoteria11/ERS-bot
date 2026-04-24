@@ -58,7 +58,7 @@ fun renderCheckout(
     if (selection.isDelivery) {
         if (selection.deliveryType == "pickup") {
             receipt += "\n🏃‍♂️<b>Способ получения:</b> Самовывоз (бесплатно)"
-            receipt += "\n<i>❗Самовывоз осуществляется только по договорённости с менеджером @ERS_sw ❗</i>"
+            receipt += "\n<i>❗Самовывоз осуществляется только по договорённости с менеджером @ERS_rrs ❗</i>"
         } else if (selection.deliveryType == "courier") {
             totalSum += 220
             receipt += "\n🚚 <b>Доставка:</b> 220 руб."
