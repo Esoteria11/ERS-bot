@@ -75,6 +75,32 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             )
         }
 
+        callbackQuery("scheduleBtn") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+
+            val scheduleText = """
+                🕒 <b>График работы магазина:</b>
+                
+                Пн-Пт: 08:00 - 01:00
+                Сб: Круглосуточно
+                Вс: 08:00 - 01:00
+            """.trimIndent()
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = scheduleText,
+                parseMode = ParseMode.HTML,
+                replyMarkup = InlineKeyboardMarkup.create(
+                    listOf(
+                        listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn"))
+                    )
+                )
+            )
+        }
+
         callbackQuery("backToMenuBtn") {
             if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
@@ -286,8 +312,8 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId,
                 text = "🎉 <b>Заказ принят! Спасибо за ваше доверие</b> ❤\n" +
-                        "Менеджер @ERS_rrs скоро свяжется с вами.\nНомер заказа: #<b>${(1000..9999).random()}</b>\n\n" +
-                        "❗ Если в течение 15 минут Вам не отпишет менеджер, значит у вас скрыт ID или закрытый профиль. \n" +
+                        "Менеджер скоро свяжется с вами.\nНомер заказа: #<b>${(1000..9999).random()}</b>\n\n" +
+                        "❗ Если в течение 15 минут Вам не напишет менеджер, значит у вас скрыт ID или закрытый профиль. \n" +
                         "Убедительная просьба, напишите нам сами: @ERS_rrs",
                 parseMode = ParseMode.HTML,
                 replyMarkup = InlineKeyboardMarkup.create(
@@ -315,7 +341,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             currentSelections.remove(chatId)
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId,
-                text = "Корзина очищена 🗑️ Ничего страшного, ты можешь начать заново в любой момент!",
+                text = "Корзина очищена 🗑️ Ничего страшного, Вы можете начать заново в любой момент!",
                 replyMarkup = InlineKeyboardMarkup.create(
                     listOf(
                         listOf(
@@ -445,12 +471,23 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                     info.flavors.map { listOf(InlineKeyboardButton.CallbackData(it, "f_$it")) }.toMutableList()
                 flavors.add(listOf(InlineKeyboardButton.CallbackData("🔙 Назад к брендам", "c_${selection.category}")))
                 val hasPhoto = info.photoUrl.isNotBlank()
+
+                val descriptionBlock = if (info.description.isNotBlank()) {
+                    "\n📝 <b>Описание:</b>\n${info.description}\n"
+                } else {
+                    ""
+                }
+
                 val textWithPhoto = if (hasPhoto) {
                     "<a href=\"${info.photoUrl}\">&#8203;</a>⭐ <b>Бренд:</b> $brand\n" +
-                            "💰 <b>Цена:</b> ${info.price} руб.\n\n" +
-                            "👇 Выбери желаемый вкус:"
+                            "💰 <b>Цена:</b> ${info.price} руб.\n" +
+                            descriptionBlock +
+                            "\n👇 Выбери желаемый вкус:"
                 } else {
-                    "⭐ <b>Бренд:</b> $brand\n💰 <b>Цена:</b> ${info.price} руб.\n\n👇 Выбери желаемый вкус:"
+                    "⭐ <b>Бренд:</b> $brand\n" +
+                            "💰 <b>Цена:</b> ${info.price} руб.\n" +
+                            descriptionBlock +
+                            "\n👇 Выбери желаемый вкус:"
                 }
                 bot.editMessageText(
                     ChatId.fromId(chatId), msgId, text = textWithPhoto, parseMode = ParseMode.HTML,

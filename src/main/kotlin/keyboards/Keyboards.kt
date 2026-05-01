@@ -9,9 +9,9 @@ fun getMainMenuKeyboard(): InlineKeyboardMarkup {
     return InlineKeyboardMarkup.Companion.create(
         listOf(
             InlineKeyboardButton.CallbackData(text = "📦 Сделать заказ", callbackData = "orderBtn"),
-            InlineKeyboardButton.CallbackData(text = "❓ Задать вопрос", callbackData = "questionBtn")
+            InlineKeyboardButton.CallbackData(text = "❓ Задать вопрос", callbackData = "questionBtn"),
+            InlineKeyboardButton.CallbackData(text = "\uD83D\uDD52 Расписание", callbackData = "scheduleBtn")
         ),
-        listOf(InlineKeyboardButton.Url(text = "\uD83C\uDF81 Конкурс", "https://t.me/c/3845528783/22")),
         listOf(
             InlineKeyboardButton.Url(text = "⭐ Отзывы", url = "https://t.me/+EeJL0ODGc3gzOWFi"),
             InlineKeyboardButton.Url(text = "📢 Телеграм канал", url = "https://t.me/+0QYXuyrVVKwwMDhi")

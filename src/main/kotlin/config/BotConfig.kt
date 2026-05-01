@@ -9,6 +9,6 @@ object BotConfig {
 
     const val SHEETS_ID = "1WWesYlgWWC2DUy1Na0XfiT1-HxCwJ_yHxRUArc4vGoU"
 
-    const val TARGET_CHANNEL_ID = -1003845528783L
-    const val CHANNEL_LINK = "https://t.me/+0QYXuyrVVKwwMDhi"
+    const val TARGET_CHANNEL_ID = 595625333L
+    const val CHANNEL_LINK = "https://t.me/jdv2929"
 }

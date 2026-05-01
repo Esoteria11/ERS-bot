@@ -52,7 +52,8 @@ data class CurrentSelection(
 data class ProductDetails(
     val price: Int,
     val photoUrl: String,
-    val flavors: List<String>
+    val flavors: List<String>,
+    val description: String = ""
 )
 
 data class ValidationResult(

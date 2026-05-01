@@ -11,7 +11,7 @@ import ersbot.config.BotConfig
 
 fun fetchCatalogFromSheets(): Map<String, Map<String, ProductDetails>> {
     val spreadsheetId = BotConfig.SHEETS_ID
-    val range = "Sheet1!A2:F" // Читаем со 2-й строки, колонки A-F
+    val range = "Sheet1!A2:G" // Читаем со 2-й строки, колонки A-G
 
     // 1. Подключаемся к файлу ключей
     val credentialStream = object {}.javaClass.getResourceAsStream("/credentials.json")
@@ -48,7 +48,8 @@ fun fetchCatalogFromSheets(): Map<String, Map<String, ProductDetails>> {
         val details = ProductDetails(
             price = row[2].toString().filter { it.isDigit() }.toIntOrNull() ?: 0,
             photoUrl = row[4].toString().trim(),
-            flavors = row[5].toString().split(",").map { it.trim() }.filter { it.isNotBlank() }
+            flavors = row[5].toString().split(",").map { it.trim() }.filter { it.isNotBlank() },
+            description = row.getOrNull(6)?.toString()?.trim() ?: "",
         )
 
         // Группируем по категориям
