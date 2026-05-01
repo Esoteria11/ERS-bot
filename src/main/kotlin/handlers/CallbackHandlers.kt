@@ -54,7 +54,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             } else {
                 bot.answerCallbackQuery(
                     callbackQueryId = callbackQuery.id!!,
-                    text = "⚠️ Вы не подписаны на канал @ERS",
+                    text = "⚠️ Вы не подписаны на канал ERS",
                     showAlert = true
                 )
             }

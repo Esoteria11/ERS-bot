@@ -21,5 +21,5 @@ fun main() {
         }
     }.startPolling()
 
-    println("Бот запущен ✅")
+    println("✅ Бот успешно запущен!")
 }
