@@ -93,7 +93,7 @@ fun renderCheckout(
             receipt += "\n\n⚠️ <i>Заполните адрес и время доставки для завершения заказа.</i>"
 
             buttons.add(listOf(InlineKeyboardButton.CallbackData("📍 Указать адрес и дату доставки", "addr_start")))
-            buttons.add(listOf(InlineKeyboardButton.CallbackData("❌ Изменить способ получения", "cancelDelivery")))
+            buttons.add(listOf(InlineKeyboardButton.CallbackData("🔙 Изменить способ получения", "cancelDelivery")))
             buttons.add(listOf(InlineKeyboardButton.CallbackData("➕ Добавить еще товар", "orderBtn")))
 
             bot.editMessageText(
@@ -107,6 +107,7 @@ fun renderCheckout(
     receipt += "\n\n✅ <i>Всё готово к оформлению!</i>"
 
     buttons.add(listOf(InlineKeyboardButton.CallbackData("✅ Всё верно — оформить заказ", "submitFinal")))
+    buttons.add(listOf(InlineKeyboardButton.CallbackData("🤝 Ввести код друга", "enterRefCodeBtn")))
     buttons.add(listOf(InlineKeyboardButton.CallbackData("🔙 Изменить способ получения", "cancelDelivery")))
     buttons.add(listOf(InlineKeyboardButton.CallbackData("➕ Добавить ещё товар", "orderBtn")))
     buttons.add(listOf(InlineKeyboardButton.CallbackData("❌ Очистить корзину", "cancelFinal")))

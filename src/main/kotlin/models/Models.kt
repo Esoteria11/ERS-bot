@@ -1,6 +1,6 @@
 package ersbot.models
 
-enum class BotState { IDLE, AWAITING_ADDRESS, AWAITING_DATETIME }
+enum class BotState { IDLE, AWAITING_ADDRESS, AWAITING_DATETIME, AWAITING_REFERRAL_CODE }
 enum class AddressStep { SELECT_CITY, ENTER_STREET, ENTER_HOUSE, ENTER_FLAT, CONFIRM }
 
 data class CartItem(
@@ -46,7 +46,8 @@ data class CurrentSelection(
     var datetime: String = "",
     var state: BotState = BotState.IDLE,
     var addressStep: AddressStep = AddressStep.SELECT_CITY,
-    var itemsConfirmed: Boolean = false
+    var itemsConfirmed: Boolean = false,
+    var enteredReferralCode: String? = null
 )
 
 data class ProductDetails(
@@ -59,4 +60,11 @@ data class ProductDetails(
 data class ValidationResult(
     val isValid: Boolean,
     val errorMessage: String? = null
+)
+
+data class ReferralInfo(
+    val userId: Long,
+    val referralCode: String,
+    val invitesCount: Int,
+    val hasDiscount: Boolean
 )

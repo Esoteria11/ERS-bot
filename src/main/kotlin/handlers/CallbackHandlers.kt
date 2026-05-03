@@ -19,6 +19,7 @@ import ersbot.config.BotState.userCarts
 import ersbot.config.mainMenuText
 import ersbot.keyboards.*
 import ersbot.models.*
+import services.*
 
 fun registerCallbacks(dispatcher: Dispatcher) {
     with(dispatcher) {
@@ -60,18 +61,29 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             }
         }
 
-        callbackQuery("questionBtn") {
+        callbackQuery("orderBtn") {
             if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
-            bot.editMessageText(
-                chatId = ChatId.fromId(chatId), messageId = msgId,
-                text = "Задавай свой вопрос здесь: @ERS_rrs, менеджер ответит в ближайшее время!",
-                replyMarkup = InlineKeyboardMarkup.create(
+            currentSelections[chatId] = CurrentSelection()
+            val categoryButtons =
+                catalog.keys.map { listOf(InlineKeyboardButton.CallbackData(it, "c_$it")) }.toMutableList()
+            val cartSize = userCarts[chatId]?.size ?: 0
+            if (cartSize > 0) {
+                categoryButtons.add(
                     listOf(
-                        listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn"))
+                        InlineKeyboardButton.CallbackData(
+                            "🛒 В корзину ($cartSize шт.)",
+                            "checkout"
+                        )
                     )
                 )
+            } else {
+                categoryButtons.add(listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn")))
+            }
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId), messageId = msgId, text = "Отлично! Выбери категорию:",
+                replyMarkup = InlineKeyboardMarkup.create(categoryButtons), disableWebPagePreview = false
             )
         }
 
@@ -83,9 +95,9 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val scheduleText = """
                 🕒 <b>График работы магазина:</b>
                 
-                Пн-Пт: 08:00 - 01:00
-                Сб: Круглосуточно
-                Вс: 08:00 - 01:00
+                <b>Пн - Пт</b>: 08:00 - 01:00
+                <b>Сб</b>: Круглосуточно
+                <b>Вс</b>: 08:00 - 01:00
             """.trimIndent()
 
             bot.editMessageText(
@@ -93,6 +105,21 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 messageId = msgId,
                 text = scheduleText,
                 parseMode = ParseMode.HTML,
+                replyMarkup = InlineKeyboardMarkup.create(
+                    listOf(
+                        listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn"))
+                    )
+                )
+            )
+        }
+
+        callbackQuery("questionBtn") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId), messageId = msgId,
+                text = "Задавай свой вопрос здесь: @ERS_rrs, менеджер ответит в ближайшее время!",
                 replyMarkup = InlineKeyboardMarkup.create(
                     listOf(
                         listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn"))
@@ -272,20 +299,24 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                     ChatId.fromId(chatId), msgId,
                     text = "❌ Корзина пуста.",
                     replyMarkup = InlineKeyboardMarkup.create(
-                        listOf(
-                            listOf(
-                                InlineKeyboardButton.CallbackData(
-                                    "🔙 В меню",
-                                    "backToMenuBtn"
-                                )
-                            )
-                        )
+                        listOf(listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn")))
                     )
                 )
                 return@callbackQuery
             }
 
-            var totalSum = cart.sumOf { it.price }
+            var initialSum = cart.sumOf { it.price }
+            var finalSum = initialSum.toDouble()
+            var discountText = ""
+
+            val userId = callbackQuery.from.id
+            var discountUsed = false
+            if (hasUserDiscount(userId)) {
+                finalSum = initialSum * 0.92
+                discountText = "\n🎁 <b>Применена скидка 8% за 5 приглашенных друзей!</b>"
+                discountUsed = true
+            }
+
             var adminReceipt = ""
             cart.forEachIndexed { i, item ->
                 adminReceipt += "${i + 1}. ${item.category} ${item.brand} — ${item.flavor} (${item.price} руб.)\n"
@@ -295,35 +326,50 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 if (selection.deliveryType == "pickup") {
                     adminReceipt += "\n🏃‍♂️ <b>Получение</b>: Самовывоз"
                 } else if (selection.deliveryType == "courier") {
-                    totalSum += 220
+                    finalSum += 220.0
                     adminReceipt += "\n🚚 <b>Доставка:</b> 220 руб."
                     adminReceipt += "\n📍 <b>Адрес:</b> ${selection.addressInput!!.formatForAdmin()}"
                     adminReceipt += "\n🕒 <b>Время доставки:</b> ${selection.datetime}"
                 }
             }
 
+            if (selection.enteredReferralCode != null) {
+                val referralResult = applyReferralCode(selection.enteredReferralCode!!)
+                if (referralResult != null) {
+                    val ownerId = referralResult.first
+                    val currentInvites = referralResult.second
+
+                    val congratulation = if (currentInvites == 5) {
+                        "🎉 <b>УРА!</b> По вашему коду оформили 5-й заказ!\nВам доступна <b>скидка 8% на следующий заказ</b>!"
+                    } else if (currentInvites < 5) {
+                        "🎉 Поздравляем! По вашему коду только что оформили заказ!\nДо получения скидки 8% осталось пригласить: <b>${5 - currentInvites} чел.</b> ($currentInvites/5)"
+                    } else {
+                        "🎉 По вашему коду оформили еще один заказ! Ваша скидка 8% активна."
+                    }
+
+                    bot.sendMessage(ChatId.fromId(ownerId), congratulation, parseMode = ParseMode.HTML)
+                }
+                adminReceipt += "\n🤝 <b>Использован код друга:</b> ${selection.enteredReferralCode}"
+            }
+
             val adminText = "🚨 <b>НОВЫЙ ЗАКАЗ!</b>\n\n" +
                     "<b>Покупатель:</b> @${callbackQuery.message?.chat?.username ?: "Скрыт (ID: $chatId)"}\n\n" +
                     "<b>Товары:</b>\n$adminReceipt\n" +
-                    "💰 <b>Общая сумма: $totalSum руб.</b>"
+                    "💰 <b>Общая сумма к оплате: ${finalSum.toInt()} руб.</b> $discountText"
 
             bot.sendMessage(ChatId.fromId(BotConfig.ADMIN_ID), text = adminText, parseMode = ParseMode.HTML)
 
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId,
                 text = "🎉 <b>Заказ принят! Спасибо за ваше доверие</b> ❤\n" +
-                        "Менеджер скоро свяжется с вами.\nНомер заказа: #<b>${(1000..9999).random()}</b>\n\n" +
-                        "❗ Если в течение 15 минут Вам не напишет менеджер, значит у вас скрыт ID или закрытый профиль. \n" +
+                        "Менеджер @ERS_rrs скоро свяжется с вами.\nНомер заказа: #<b>${(1000..9999).random()}</b>\n\n" +
+                        "💰 <b>К оплате: ${finalSum.toInt()} руб.</b> $discountText\n\n" +
+                        "❗ Если в течение 15 минут Вам не отпишет менеджер, значит у вас скрыт ID или закрытый профиль. \n" +
                         "Убедительная просьба, напишите нам сами: @ERS_rrs",
                 parseMode = ParseMode.HTML,
                 replyMarkup = InlineKeyboardMarkup.create(
                     listOf(
-                        listOf(
-                            InlineKeyboardButton.CallbackData(
-                                "🔙 В меню",
-                                "backToMenuBtn"
-                            )
-                        )
+                        listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))
                     )
                 ),
                 disableWebPagePreview = true
@@ -331,6 +377,10 @@ fun registerCallbacks(dispatcher: Dispatcher) {
 
             userCarts.remove(chatId)
             currentSelections.remove(chatId)
+
+            if (discountUsed) {
+                consumeUserDiscount(userId)
+            }
         }
 
         callbackQuery("cancelFinal") {
@@ -351,32 +401,6 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                         )
                     )
                 ), disableWebPagePreview = true
-            )
-        }
-
-        callbackQuery("orderBtn") {
-            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
-            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
-            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
-            currentSelections[chatId] = CurrentSelection()
-            val categoryButtons =
-                catalog.keys.map { listOf(InlineKeyboardButton.CallbackData(it, "c_$it")) }.toMutableList()
-            val cartSize = userCarts[chatId]?.size ?: 0
-            if (cartSize > 0) {
-                categoryButtons.add(
-                    listOf(
-                        InlineKeyboardButton.CallbackData(
-                            "🛒 В корзину ($cartSize шт.)",
-                            "checkout"
-                        )
-                    )
-                )
-            } else {
-                categoryButtons.add(listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn")))
-            }
-            bot.editMessageText(
-                chatId = ChatId.fromId(chatId), messageId = msgId, text = "Отлично! Выбери категорию:",
-                replyMarkup = InlineKeyboardMarkup.create(categoryButtons), disableWebPagePreview = false
             )
         }
 
@@ -506,15 +530,15 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 val total = userCarts[chatId]?.sumOf { it.price } ?: 0
                 val kb = InlineKeyboardMarkup.create(
                     listOf(
-                        listOf(InlineKeyboardButton.CallbackData("➕ Добавить еще товар", "orderBtn")),
-                        listOf(InlineKeyboardButton.CallbackData("🛒 Оформить заказ ($total руб.)", "checkout")),
-                        listOf(InlineKeyboardButton.CallbackData("❌ Очистить корзину", "cancelFinal"))
-                    )
+                        InlineKeyboardButton.CallbackData("➕ Добавить еще", "orderBtn"),
+                        InlineKeyboardButton.CallbackData("❌ Очистить", "cancelFinal")
+                    ),
+                    listOf(InlineKeyboardButton.CallbackData("🛒 Оформить заказ ($total руб.)", "checkout"))
                 )
                 bot.editMessageText(
                     ChatId.fromId(chatId), msgId,
                     text = "✅ <b>${selection.brand} ($flav)</b> добавлен в корзину!\n\n" +
-                            "🛍️В корзине товаров: ${userCarts[chatId]?.size}\n" +
+                            "🛍️ В корзине товаров: ${userCarts[chatId]?.size}\n" +
                             "💰 Текущая сумма: <b>$total руб.</b>\n\nЧто делаем дальше?",
                     parseMode = ParseMode.HTML, replyMarkup = kb, disableWebPagePreview = true
                 )
@@ -546,6 +570,56 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             activeMenus[chatId]?.let { menuId ->
                 finalizeAddressInput(bot, chatId, menuId, selection, userCarts[chatId])
             }
+        }
+
+        callbackQuery("refSystemBtn") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val userId = callbackQuery.from.id
+            val username = callbackQuery.from.username
+
+            val userCode = getOrCreateReferralCode(userId, username)
+
+            val refText = """
+                🎁 <b>Твой уникальный код:</b>
+                👇 Нажми, чтобы скопировать 👇
+                
+                <code>$userCode</code>
+                
+                Поделись им с друзьями! Если <b>5 человек</b> введут твой код при оформлении заказа, ты получишь <b>скидку 8%</b> на следующую покупку! 
+            """.trimIndent()
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = refText,
+                parseMode = ParseMode.HTML,
+                replyMarkup = InlineKeyboardMarkup.create(
+                    listOf(
+                        listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn"))
+                    )
+                )
+            )
+        }
+
+        callbackQuery("enterRefCodeBtn") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val selection = currentSelections[chatId] ?: return@callbackQuery
+
+            selection.state = BotState.AWAITING_REFERRAL_CODE
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId), messageId = msgId,
+                text = "✍️ <b>Введите реферальный код вашего друга:</b>\n\n",
+                parseMode = ParseMode.HTML,
+                replyMarkup = InlineKeyboardMarkup.create(
+                    listOf(listOf(InlineKeyboardButton.CallbackData("🔙 Назад к корзине", "checkout")))
+                )
+            )
         }
     }
 }

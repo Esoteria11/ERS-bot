@@ -8,13 +8,18 @@ import ersbot.models.AddressStep
 fun getMainMenuKeyboard(): InlineKeyboardMarkup {
     return InlineKeyboardMarkup.Companion.create(
         listOf(
-            InlineKeyboardButton.CallbackData(text = "📦 Сделать заказ", callbackData = "orderBtn"),
-            InlineKeyboardButton.CallbackData(text = "❓ Задать вопрос", callbackData = "questionBtn"),
-            InlineKeyboardButton.CallbackData(text = "\uD83D\uDD52 Расписание", callbackData = "scheduleBtn")
+            InlineKeyboardButton.CallbackData(text = "📦 Сделать заказ", callbackData = "orderBtn")
         ),
         listOf(
-            InlineKeyboardButton.Url(text = "⭐ Отзывы", url = "https://t.me/+EeJL0ODGc3gzOWFi"),
-            InlineKeyboardButton.Url(text = "📢 Телеграм канал", url = "https://t.me/+0QYXuyrVVKwwMDhi")
+            InlineKeyboardButton.CallbackData(text = "\uD83D\uDD52 Расписание", callbackData = "scheduleBtn"),
+            InlineKeyboardButton.CallbackData(text = "❓ Задать вопрос", callbackData = "questionBtn")
+        ),
+        listOf(
+            InlineKeyboardButton.Url(text = "📢 Наш канал", url = "https://t.me/+0QYXuyrVVKwwMDhi"),
+            InlineKeyboardButton.Url(text = "⭐ Отзывы", url = "https://t.me/+EeJL0ODGc3gzOWFi")
+        ),
+        listOf(
+            InlineKeyboardButton.CallbackData(text = "🎁 Реферальная система", callbackData = "refSystemBtn")
         )
     )
 }

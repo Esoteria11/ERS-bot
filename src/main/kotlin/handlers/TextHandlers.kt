@@ -14,6 +14,7 @@ import ersbot.config.mainMenuText
 import ersbot.keyboards.*
 import ersbot.models.*
 import ersbot.services.*
+import services.*
 
 fun registerTextHandler(dispatcher: Dispatcher) {
     with(dispatcher) {
@@ -133,6 +134,42 @@ fun registerTextHandler(dispatcher: Dispatcher) {
                     }
                 }
 
+                selection?.state == BotState.AWAITING_REFERRAL_CODE -> {
+                    val userId = message.from?.id ?: return@text
+                    bot.deleteMessage(ChatId.fromId(chatId), message.messageId)
+
+                    val inputCode = userText.trim().uppercase()
+
+                    if (isReferralCodeValid(inputCode, userId)) {
+                        selection.enteredReferralCode = inputCode
+                        selection.state = BotState.IDLE
+
+                        activeMenus[chatId]?.let { menuId ->
+                            bot.editMessageText(
+                                chatId = ChatId.fromId(chatId),
+                                messageId = menuId,
+                                text = "✅ <b>Код $inputCode успешно применен!</b>\n\nСкидка будет учтена при финальном расчете заказа.",
+                                parseMode = ParseMode.HTML,
+                                replyMarkup = InlineKeyboardMarkup.create(
+                                    listOf(listOf(InlineKeyboardButton.CallbackData("➡️ Продолжить оформление", "checkout")))
+                                )
+                            )
+                        }
+                    } else {
+                        activeMenus[chatId]?.let { menuId ->
+                            bot.editMessageText(
+                                chatId = ChatId.fromId(chatId),
+                                messageId = menuId,
+                                text = "❌ <b>Ошибка!</b>\nТакого кода не существует, либо вы ввели свой собственный код.\n\nПопробуйте ввести заново или вернитесь в корзину:",
+                                parseMode = ParseMode.HTML,
+                                replyMarkup = InlineKeyboardMarkup.create(
+                                    listOf(listOf(InlineKeyboardButton.CallbackData("🔙 Вернуться к корзине", "checkout")))
+                                )
+                            )
+                        }
+                    }
+                }
+
                 else -> {
                     if (userText == "🔄 Перезапустить бота") {
                         bot.deleteMessage(ChatId.fromId(chatId), message.messageId)
@@ -148,9 +185,6 @@ fun registerTextHandler(dispatcher: Dispatcher) {
                         )
                         res.getOrNull()?.messageId?.let { activeMenus[chatId] = it }
                     } else {
-                        // ✅ НЕ удаляем сообщение, если это не команда перезапуска
-                        // Просто игнорируем ввод вне сценария
-                        // bot.deleteMessage(ChatId.fromId(chatId), message.messageId) // ← Закомментировано!
                     }
                 }
             }
