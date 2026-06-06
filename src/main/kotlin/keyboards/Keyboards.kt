@@ -3,10 +3,12 @@ package ersbot.keyboards
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
 import data.ALL_STREETS
+import ersbot.config.BotState
 import ersbot.models.AddressStep
+import ersbot.models.CartItem
 
 fun getMainMenuKeyboard(): InlineKeyboardMarkup {
-    return InlineKeyboardMarkup.Companion.create(
+    return InlineKeyboardMarkup.create(
         listOf(
             InlineKeyboardButton.CallbackData(text = "📦 Сделать заказ", callbackData = "orderBtn")
         ),
@@ -22,6 +24,20 @@ fun getMainMenuKeyboard(): InlineKeyboardMarkup {
             InlineKeyboardButton.CallbackData(text = "🎁 Реферальная система", callbackData = "refSystemBtn")
         )
     )
+}
+
+fun getCategoryKeyboardWithCart(chatId: Long, categories: List<String>): InlineKeyboardMarkup {
+    val buttons = categories.map { listOf(InlineKeyboardButton.CallbackData(it, "c_$it")) }.toMutableList()
+
+    val cartSize = BotState.userCarts[chatId]?.size ?: 0
+    if (cartSize > 0) {
+        buttons.add(
+            listOf(InlineKeyboardButton.CallbackData("🛒 Корзина ($cartSize шт.)", "view_cart"))
+        )
+    }
+
+    buttons.add(listOf(InlineKeyboardButton.CallbackData("🔙 В главное меню", "backToMenuBtn")))
+    return InlineKeyboardMarkup.create(buttons)
 }
 
 fun getCityKeyboard(): InlineKeyboardMarkup {
@@ -41,7 +57,6 @@ fun getStreetKeyboard(page: Int = 0): InlineKeyboardMarkup {
     val pageStreets = ALL_STREETS.drop(currentPage * streetsPerPage).take(streetsPerPage)
     val keyboardRows: MutableList<List<InlineKeyboardButton>> = mutableListOf()
 
-    // Каждая улица — отдельная строка (занимает всю ширину)
     pageStreets.forEach { street ->
         val globalIndex = ALL_STREETS.indexOf(street)
         keyboardRows.add(
@@ -49,7 +64,6 @@ fun getStreetKeyboard(page: Int = 0): InlineKeyboardMarkup {
         )
     }
 
-    // Навигация
     val navRow = mutableListOf<InlineKeyboardButton>()
     if (currentPage > 0) navRow.add(InlineKeyboardButton.CallbackData("⬅️", "streets_page_${currentPage - 1}"))
     navRow.add(InlineKeyboardButton.CallbackData("❌ Отмена", "addr_back_to_city"))
@@ -66,6 +80,23 @@ fun getFlatKeyboard(): InlineKeyboardMarkup {
             listOf(InlineKeyboardButton.CallbackData("🔙 Назад", "addr_back_to_house")) // ✅ Теперь ведёт на шаг назад
         )
     )
+}
+
+fun getDeliveryKeyboard(chatId: Long): InlineKeyboardMarkup {
+    val buttons = mutableListOf<List<InlineKeyboardButton>>()
+
+    buttons.add(listOf(InlineKeyboardButton.CallbackData("🏃‍♂️ Самовывоз (Бесплатно)", "del_pickup")))
+    buttons.add(listOf(InlineKeyboardButton.CallbackData("🚚 Доставка (+220р)", "del_courier")))
+
+    val savedAddr = ersbot.config.BotState.userLastAddresses[chatId]
+    if (savedAddr != null) {
+        val addrText = "${savedAddr.city}, ${savedAddr.street}, д. ${savedAddr.house}"
+        buttons.add(listOf(InlineKeyboardButton.CallbackData(" $addrText", "use_saved_address")))
+    }
+
+    buttons.add(listOf(InlineKeyboardButton.CallbackData("🛒 Вернуться к корзине", "view_cart")))
+
+    return InlineKeyboardMarkup.create(buttons)
 }
 
 fun getBackKeyboardForStep(step: AddressStep): InlineKeyboardMarkup {
@@ -94,5 +125,66 @@ fun getManagerOrderButtons(orderId: String): InlineKeyboardMarkup {
             listOf(InlineKeyboardButton.CallbackData("✅ Оплатил", "admin_paid_$orderId")),
             listOf(InlineKeyboardButton.CallbackData("❌ Отказался", "admin_refused_$orderId"))
         )
+    )
+}
+
+fun getCartKeyboard(cart: List<CartItem>): InlineKeyboardMarkup {
+    val total = cart.sumOf { it.price }
+
+    val buttons = listOf(
+        listOf(
+            InlineKeyboardButton.CallbackData("🗑️ Удалить товар", "cart_delete_select"),
+            InlineKeyboardButton.CallbackData("➕ Добавить товар", "orderBtn")
+        ),
+        listOf(
+            InlineKeyboardButton.CallbackData("❌ Очистить всё", "cart_clear"),
+            InlineKeyboardButton.CallbackData("✅ Оформить заказ", "checkout")
+        ),
+        listOf(
+            InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn")
+        )
+    )
+
+    return InlineKeyboardMarkup.create(buttons)
+}
+
+fun getCartItemWithQtyKeyboard(cart: List<CartItem>, index: Int): InlineKeyboardMarkup {
+    val item = cart[index]
+    val buttons = mutableListOf<List<InlineKeyboardButton>>()
+
+    buttons.add(
+        listOf(
+            InlineKeyboardButton.CallbackData("◀️", "cart_dec_$index"),
+            InlineKeyboardButton.CallbackData("${item.brand} - ${item.price}₽", "noop"),
+            InlineKeyboardButton.CallbackData("▶️", "cart_inc_$index")
+        )
+    )
+
+    buttons.add(
+        listOf(
+            InlineKeyboardButton.CallbackData("🗑️ Удалить товар", "cart_remove_$index")
+        )
+    )
+
+    buttons.add(
+        listOf(
+            InlineKeyboardButton.CallbackData("🔙 Назад к корзине", "view_cart")
+        )
+    )
+
+    return InlineKeyboardMarkup.create(buttons)
+}
+
+fun getDeleteSelectionKeyboard(cart: List<CartItem>): InlineKeyboardMarkup {
+    val buttons = cart.mapIndexed { index, item ->
+        InlineKeyboardButton.CallbackData(
+            "${index + 1}️⃣ ${item.brand} (${item.flavor})",
+            "cart_delete_$index"
+        )
+    }
+
+    return InlineKeyboardMarkup.create(
+        buttons.chunked(1) +
+                listOf(listOf(InlineKeyboardButton.CallbackData("❌ Отмена", "cart_delete_cancel")))
     )
 }

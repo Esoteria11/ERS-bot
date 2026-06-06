@@ -18,41 +18,23 @@ fun renderCheckout(
 ) {
     if (cart.isNullOrEmpty()) {
         bot.editMessageText(
-            chatId = ChatId.Companion.fromId(chatId), messageId = msgId,
-            text = "Ой, кажется корзина пуста! Пожалуйста, начните оформление заказа заново 🔄",
-            replyMarkup = InlineKeyboardMarkup.Companion.create(listOf(listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))))
-        )
-        return
-    }
-
-    if (!selection.itemsConfirmed) {
-        var receipt = "🛒 <b>Проверьте товары в корзине:</b>\n\n"
-        cart.forEachIndexed { i, item ->
-            receipt += "${i + 1}. ${item.category} ${item.brand} — ${item.flavor} (<b>${item.price} руб.</b>)\n"
-        }
-        receipt += "\n💰 <b>Сумма: ${cart.sumOf { it.price }} руб.</b>\n\n"
-        receipt += "<i>После подтверждения нужно будет выбрать способ получения заказа.</i>"
-
-        val buttons = InlineKeyboardMarkup.Companion.create(
-            listOf(
-                listOf(InlineKeyboardButton.CallbackData("✅ Товары верны — дальше", "itemsConfirmedBtn")),
-                listOf(InlineKeyboardButton.CallbackData("➕ Добавить ещё товар", "orderBtn")),
-                listOf(InlineKeyboardButton.CallbackData("❌ Очистить корзину", "cancelFinal"))
+            chatId = ChatId.fromId(chatId), messageId = msgId,
+            text = "Ой, кажется ваша корзина пуста! Пожалуйста, начните оформление заказа заново 🔄",
+            replyMarkup = InlineKeyboardMarkup.create(
+                listOf(
+                    listOf(InlineKeyboardButton.CallbackData("📦 В каталог", "orderBtn")),
+                    listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))
+                )
             )
-        )
-
-        bot.editMessageText(
-            chatId = ChatId.Companion.fromId(chatId), messageId = msgId,
-            text = receipt, parseMode = ParseMode.HTML, replyMarkup = buttons
         )
         return
     }
 
     var totalSum = cart.sumOf { it.price }
-    var receipt = "🛒 <b>Товары в корзине:</b>\n\n"
+    var receipt = "🛒 <b>Товары для заказа:</b>\n\n"
 
     cart.forEachIndexed { i, item ->
-        receipt += "${i + 1}. ${item.category} ${item.brand} — ${item.flavor} (<b>${item.price} руб.</b>)\n"
+        receipt += "${i + 1}. ${item.category} ${item.brand} - ${item.flavor} (<b>${item.price} руб.</b>)\n"
     }
 
     if (selection.isDelivery) {
@@ -68,7 +50,7 @@ fun renderCheckout(
             } else {
                 receipt += "\n📍 <b>Адрес:</b> <i>не указан</i>"
             }
-            receipt += "\n🕒 <b>Дата и Время:</b> ${selection.datetime}"
+            receipt += "\n🕒 <b>Дата и Время:</b> ${selection.datetime.ifBlank { "не указано" }}"
         }
     }
     receipt += "\n\n💰 <b>ИТОГО К ОПЛАТЕ: $totalSum руб.</b>"
@@ -78,27 +60,31 @@ fun renderCheckout(
     if (!selection.isDelivery) {
         receipt += "\n\n⚠️ <i>Для завершения заказа необходимо выбрать способ получения.</i>"
         buttons.add(listOf(InlineKeyboardButton.CallbackData("🚚 Выбрать способ получения", "startDelivery")))
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("➕ Добавить еще товар", "orderBtn")))
-        buttons.add(listOf(InlineKeyboardButton.CallbackData("❌ Очистить корзину", "cancelFinal")))
+        buttons.add(listOf(InlineKeyboardButton.CallbackData("🛒 Вернуться к корзине", "view_cart")))
 
         bot.editMessageText(
-            chatId = ChatId.Companion.fromId(chatId), messageId = msgId, text = receipt,
-            parseMode = ParseMode.HTML, replyMarkup = InlineKeyboardMarkup.Companion.create(buttons)
+            chatId = ChatId.fromId(chatId), messageId = msgId, text = receipt,
+            parseMode = ParseMode.HTML, replyMarkup = InlineKeyboardMarkup.create(buttons)
         )
         return
     }
 
     if (selection.deliveryType == "courier") {
         if (selection.addressInput?.isComplete() != true || selection.datetime.isBlank()) {
+            val btnText = if (selection.addressInput?.isComplete() == true) {
+                "🕒 Указать время доставки"
+            } else {
+                "📍 Указать адрес и время доставки"
+            }
             receipt += "\n\n⚠️ <i>Заполните адрес и время доставки для завершения заказа.</i>"
 
-            buttons.add(listOf(InlineKeyboardButton.CallbackData("📍 Указать адрес и дату доставки", "addr_start")))
+            buttons.add(listOf(InlineKeyboardButton.CallbackData(btnText, "addr_start")))
             buttons.add(listOf(InlineKeyboardButton.CallbackData("🔙 Изменить способ получения", "cancelDelivery")))
-            buttons.add(listOf(InlineKeyboardButton.CallbackData("➕ Добавить еще товар", "orderBtn")))
+            buttons.add(listOf(InlineKeyboardButton.CallbackData("🛒 Вернуться к корзине", "view_cart")))
 
             bot.editMessageText(
-                chatId = ChatId.Companion.fromId(chatId), messageId = msgId, text = receipt,
-                parseMode = ParseMode.HTML, replyMarkup = InlineKeyboardMarkup.Companion.create(buttons)
+                chatId = ChatId.fromId(chatId), messageId = msgId, text = receipt,
+                parseMode = ParseMode.HTML, replyMarkup = InlineKeyboardMarkup.create(buttons)
             )
             return
         }
@@ -106,15 +92,14 @@ fun renderCheckout(
 
     receipt += "\n\n✅ <i>Всё готово к оформлению!</i>"
 
-    buttons.add(listOf(InlineKeyboardButton.CallbackData("✅ Всё верно — оформить заказ", "submitFinal")))
+    buttons.add(listOf(InlineKeyboardButton.CallbackData("✅ Оформить заказ", "submitFinal")))
     buttons.add(listOf(InlineKeyboardButton.CallbackData("🤝 Ввести код друга", "enterRefCodeBtn")))
     buttons.add(listOf(InlineKeyboardButton.CallbackData("🔙 Изменить способ получения", "cancelDelivery")))
-    buttons.add(listOf(InlineKeyboardButton.CallbackData("➕ Добавить ещё товар", "orderBtn")))
-    buttons.add(listOf(InlineKeyboardButton.CallbackData("❌ Очистить корзину", "cancelFinal")))
+    buttons.add(listOf(InlineKeyboardButton.CallbackData("🛒 Вернуться к корзине", "view_cart")))
 
     bot.editMessageText(
-        chatId = ChatId.Companion.fromId(chatId), messageId = msgId, text = receipt,
-        parseMode = ParseMode.HTML, replyMarkup = InlineKeyboardMarkup.Companion.create(buttons)
+        chatId = ChatId.fromId(chatId), messageId = msgId, text = receipt,
+        parseMode = ParseMode.HTML, replyMarkup = InlineKeyboardMarkup.create(buttons)
     )
 }
 
@@ -136,7 +121,7 @@ fun finalizeAddressInput(
 
     menuId?.let {
         bot.editMessageText(
-            chatId = ChatId.Companion.fromId(chatId), messageId = it,
+            chatId = ChatId.fromId(chatId), messageId = it,
             text = confirmationText, parseMode = ParseMode.HTML,
             replyMarkup = getAddressConfirmationKeyboard()
         )
