@@ -67,24 +67,13 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             currentSelections[chatId] = CurrentSelection()
-            val categoryButtons =
-                catalog.keys.map { listOf(InlineKeyboardButton.CallbackData(it, "c_$it")) }.toMutableList()
-            val cartSize = userCarts[chatId]?.size ?: 0
-            if (cartSize > 0) {
-                categoryButtons.add(
-                    listOf(
-                        InlineKeyboardButton.CallbackData(
-                            "🛒 В корзину ($cartSize шт.)",
-                            "checkout"
-                        )
-                    )
-                )
-            } else {
-                categoryButtons.add(listOf(InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn")))
-            }
+
+            // Используем новую функцию с динамической корзиной
+            val categoryButtons = getCategoryKeyboardWithCart(chatId, catalog.keys.toList())
+
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId, text = "Отлично! Выбери категорию:",
-                replyMarkup = InlineKeyboardMarkup.create(categoryButtons), disableWebPagePreview = false
+                replyMarkup = categoryButtons, disableWebPagePreview = false
             )
         }
 
@@ -144,6 +133,239 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             )
         }
 
+        callbackQuery("view_cart") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val cart = userCarts[chatId]
+
+            if (cart.isNullOrEmpty()) {
+                bot.editMessageText(
+                    chatId = ChatId.fromId(chatId),
+                    messageId = msgId,
+                    text = "🛒 <b>Ваша корзина пуста.</b>\nДобавьте товары из каталога!",
+                    parseMode = ParseMode.HTML,
+                    replyMarkup = InlineKeyboardMarkup.create(
+                        listOf(
+                            listOf(InlineKeyboardButton.CallbackData("📦 Перейти в каталог", "orderBtn")),
+                            listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))
+                        )
+                    )
+                )
+            } else {
+                val total = cart.sumOf { it.price }
+                val itemsText = cart.mapIndexed { i, item ->
+                    "${i + 1}. ${item.category} • ${item.brand} • ${item.flavor} - <b>${item.price}₽</b>"
+                }.joinToString("\n")
+
+                bot.editMessageText(
+                    chatId = ChatId.fromId(chatId),
+                    messageId = msgId,
+                    text = "🛒 <b>Ваша корзина</b>\n\n" +
+                            "<b>Товары:</b>\n$itemsText\n\n" +
+                            "━━━━━━━━━━━━━━━━\n" +
+                            "💰 <b>Итого: $total₽</b>\n",
+                    parseMode = ParseMode.HTML,
+                    replyMarkup = getCartKeyboard(cart)
+                )
+            }
+        }
+
+        // НОВЫЙ ОБРАБОТЧИК: Удаление товара из корзины
+        callbackQuery {
+            val data = callbackQuery.data
+            if (!data.startsWith("cart_remove_")) return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val index = data.removePrefix("cart_remove_").toIntOrNull() ?: return@callbackQuery
+
+            val cart = userCarts[chatId]
+            if (cart != null && index in cart.indices) {
+                val removedItem = cart.removeAt(index)
+
+                if (cart.isEmpty()) {
+                    bot.editMessageText(
+                        chatId = ChatId.fromId(chatId),
+                        messageId = msgId,
+                        text = "🗑️ <b>${removedItem.brand} (${removedItem.flavor})</b> удалён.\n\nКорзина пуста.",
+                        parseMode = ParseMode.HTML,
+                        replyMarkup = InlineKeyboardMarkup.create(
+                            listOf(
+                                listOf(InlineKeyboardButton.CallbackData("📦 Сделать заказ", "orderBtn")),
+                                listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))
+                            )
+                        )
+                    )
+                } else {
+                    val total = cart.sumOf { it.price }
+                    val itemsText = cart.mapIndexed { i, item ->
+                        "${i + 1}. ${item.category} • ${item.brand} • ${item.flavor} - <b>${item.price}₽</b>"
+                    }.joinToString("\n")
+
+                    bot.editMessageText(
+                        chatId = ChatId.fromId(chatId),
+                        messageId = msgId,
+                        text = "✅ <b>${removedItem.brand} (${removedItem.flavor})</b> удалён.\n\n" +
+                                "<b>Товары:</b>\n$itemsText\n\n" +
+                                "━━━━━━━━━━━━━━━━\n" +
+                                "💰 <b>Итого: $total₽</b>\n",
+                        parseMode = ParseMode.HTML,
+                        replyMarkup = getCartKeyboard(cart)
+                    )
+                }
+            }
+        }
+
+        callbackQuery("cart_clear") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+
+            userCarts.remove(chatId)
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = "🧹 <b>Корзина была очищена.</b>\n",
+                parseMode = ParseMode.HTML,
+                replyMarkup = InlineKeyboardMarkup.create(
+                    listOf(
+                        listOf(InlineKeyboardButton.CallbackData("📦 Сделать заказ", "orderBtn")),
+                        listOf(InlineKeyboardButton.CallbackData("🔙 В главное меню", "backToMenuBtn"))
+                    )
+                )
+            )
+        }
+
+        callbackQuery("cart_delete_select") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val cart = userCarts[chatId]
+
+            if (cart.isNullOrEmpty()) {
+                bot.answerCallbackQuery(callbackQuery.id, "Корзина пуста!", showAlert = true)
+                return@callbackQuery
+            }
+
+            if (cart.size == 1) {
+                val removedItem = cart.removeAt(0)
+                userCarts.remove(chatId)
+
+                bot.editMessageText(
+                    chatId = ChatId.fromId(chatId),
+                    messageId = msgId,
+                    text = "🗑️ <b>${removedItem.brand} (${removedItem.flavor})</b> удалён.\n\nКорзина пуста.",
+                    parseMode = ParseMode.HTML,
+                    replyMarkup = InlineKeyboardMarkup.create(
+                        listOf(
+                            listOf(InlineKeyboardButton.CallbackData("📦 Сделать заказ", "orderBtn")),
+                            listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))
+                        )
+                    )
+                )
+                return@callbackQuery
+            }
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = "❓ <b>Какой товар желаете удалить?</b>\n\n" +
+                        cart.mapIndexed { i, item ->
+                            "${i + 1}. ${item.category} • ${item.brand} • ${item.flavor} - ${item.price}₽"
+                        }.joinToString("\n"),
+                parseMode = ParseMode.HTML,
+                replyMarkup = getDeleteSelectionKeyboard(cart)
+            )
+        }
+
+        callbackQuery {
+            val data = callbackQuery.data
+            if (!data.startsWith("cart_delete_")) return@callbackQuery
+            if (data == "cart_delete_select") return@callbackQuery
+            if (data == "cart_delete_cancel") return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val index = data.removePrefix("cart_delete_").toIntOrNull() ?: return@callbackQuery
+
+            val cart = userCarts[chatId]
+            if (cart != null && index in cart.indices) {
+                val removedItem = cart.removeAt(index)
+
+                if (cart.isEmpty()) {
+                    bot.editMessageText(
+                        chatId = ChatId.fromId(chatId),
+                        messageId = msgId,
+                        text = "🗑️ <b>${removedItem.brand} (${removedItem.flavor})</b> удалён.\n\nКорзина пуста.",
+                        parseMode = ParseMode.HTML,
+                        replyMarkup = InlineKeyboardMarkup.create(
+                            listOf(
+                                listOf(InlineKeyboardButton.CallbackData("📦 Сделать заказ", "orderBtn")),
+                                listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))
+                            )
+                        )
+                    )
+                } else {
+                    val total = cart.sumOf { it.price }
+                    val itemsText = cart.mapIndexed { i, item ->
+                        "${i + 1}. ${item.category} • ${item.brand} • ${item.flavor} - <b>${item.price}₽</b>"
+                    }.joinToString("\n")
+
+                    bot.editMessageText(
+                        chatId = ChatId.fromId(chatId),
+                        messageId = msgId,
+                        text = "✅ <b>${removedItem.brand} (${removedItem.flavor})</b> удалён.\n\n" +
+                                "<b>Товары:</b>\n$itemsText\n\n" +
+                                "━━━━━━━━━━━━━━━━\n" +
+                                "💰 <b>Итого: $total₽</b>\n",
+                        parseMode = ParseMode.HTML,
+                        replyMarkup = getCartKeyboard(cart)
+                    )
+                }
+            }
+        }
+
+// Обработчик: Отмена удаления
+        callbackQuery("cart_delete_cancel") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val cart = userCarts[chatId]
+
+            if (cart.isNullOrEmpty()) {
+                bot.editMessageText(
+                    chatId = ChatId.fromId(chatId),
+                    messageId = msgId,
+                    text = "🛒 <b>Ваша корзина пуста</b>\nДобавьте товары из каталога!",
+                    parseMode = ParseMode.HTML,
+                    replyMarkup = InlineKeyboardMarkup.create(
+                        listOf(
+                            listOf(InlineKeyboardButton.CallbackData("📦 Перейти в каталог", "orderBtn")),
+                            listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))
+                        )
+                    )
+                )
+            } else {
+                val total = cart.sumOf { it.price }
+                val itemsText = cart.mapIndexed { i, item ->
+                    "${i + 1}. ${item.category} • ${item.brand} • ${item.flavor} - <b>${item.price}₽</b>"
+                }.joinToString("\n")
+
+                bot.editMessageText(
+                    chatId = ChatId.fromId(chatId),
+                    messageId = msgId,
+                    text = "🛒 <b>Ваша корзина</b>\n\n" +
+                            "<b>Товары:</b>\n$itemsText\n\n" +
+                            "━━━━━━━━━━━━━━━━\n" +
+                            "💰 <b>Итого: $total₽</b>\n",
+                    parseMode = ParseMode.HTML,
+                    replyMarkup = getCartKeyboard(cart)
+                )
+            }
+        }
+
         callbackQuery("checkout") {
             if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
@@ -153,16 +375,6 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             renderCheckout(bot, chatId, msgId, cart, selection)
         }
 
-        callbackQuery("itemsConfirmedBtn") {
-            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
-            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
-            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
-            val selection = currentSelections[chatId] ?: return@callbackQuery
-
-            selection.itemsConfirmed = true  // ← Переходим ко второму этапу
-            renderCheckout(bot, chatId, msgId, userCarts[chatId], selection)
-        }
-
         callbackQuery("startDelivery") {
             if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
@@ -170,13 +382,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId,
                 text = "Выберите способ получения заказа:",
-                replyMarkup = InlineKeyboardMarkup.create(
-                    listOf(
-                        listOf(InlineKeyboardButton.CallbackData("🏃‍♂️ Самовывоз (Бесплатно)", "del_pickup")),
-                        listOf(InlineKeyboardButton.CallbackData("🚚 Доставка (+220р)", "del_courier")),
-                        listOf(InlineKeyboardButton.CallbackData("🔙 Назад к корзине", "checkout"))
-                    )
-                )
+                replyMarkup = getDeliveryKeyboard(chatId)
             )
         }
 
@@ -214,9 +420,46 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
+
+            if (selection.addressInput?.isComplete() == true) {
+                selection.state = UserState.AWAITING_DATETIME
+                bot.editMessageText(
+                    chatId = ChatId.fromId(chatId), messageId = msgId,
+                    text = "📍 Адрес уже указан: <b>${selection.addressInput!!.formatForUser()}</b>\n\n" +
+                            "📅 Теперь напишите <b>Дату и Время доставки</b>:\n" +
+                            "⚠️ <b>ФОРМАТ:</b> Число месяц время\n" +
+                            "👉 <i>Например: 16 апреля 18:30</i>\n\n",
+                    parseMode = ParseMode.HTML,
+                    replyMarkup = InlineKeyboardMarkup.create(
+                        listOf(
+                            listOf(InlineKeyboardButton.CallbackData("✏️ Изменить адрес", "addr_change")),
+                            listOf(InlineKeyboardButton.CallbackData("🛒 Вернуться к корзине", "view_cart"))
+                        )
+                    )
+                )
+            } else {
+                selection.addressStep = AddressStep.SELECT_CITY
+                selection.addressInput = AddressInput()
+                selection.state = UserState.AWAITING_ADDRESS
+                bot.editMessageText(
+                    chatId = ChatId.fromId(chatId),
+                    messageId = msgId,
+                    text = "🏙️ Выберите населённый пункт:",
+                    replyMarkup = getCityKeyboard()
+                )
+            }
+        }
+
+        callbackQuery("addr_change") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val selection = currentSelections[chatId] ?: return@callbackQuery
+
             selection.addressStep = AddressStep.SELECT_CITY
             selection.addressInput = AddressInput()
             selection.state = UserState.AWAITING_ADDRESS
+
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId),
                 messageId = msgId,
@@ -320,7 +563,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
 
             var adminReceipt = ""
             cart.forEachIndexed { i, item ->
-                adminReceipt += "${i + 1}. ${item.category} ${item.brand} — ${item.flavor} (${item.price} руб.)\n"
+                adminReceipt += "${i + 1}. ${item.category} ${item.brand} - ${item.flavor} (${item.price} руб.)\n"
             }
 
             var addressText: String? = null
@@ -338,7 +581,8 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             }
 
             if (selection.enteredReferralCode != null) {
-                adminReceipt += "\n🤝 <b>Использован код друга:</b> ${selection.enteredReferralCode}"            }
+                adminReceipt += "\n🤝 <b>Использован код друга:</b> ${selection.enteredReferralCode}"
+            }
 
             val orderId = (1000..9999).random().toString()
 
@@ -361,10 +605,8 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val adminText = "🚨 <b>НОВЫЙ ЗАКАЗ!</b>\n\n" +
                     "<b>Покупатель:</b> @${callbackQuery.message?.chat?.username ?: "Скрыт (ID: $chatId)"}\n\n" +
                     "<b>Товары:</b>\n$adminReceipt\n" +
-                    "💰 <b>Общая сумма к оплате: ${finalSum.toInt()} руб.</b> $discountText" +
+                    "💰 <b>Общая сумма к оплате: ${finalSum.toInt()} руб.</b> $discountText\n\n" +
                     "<b>Подтвердите действие:</b>"
-
-
 
             bot.sendMessage(
                 ChatId.fromId(BotConfig.ADMIN_ID),
@@ -540,16 +782,21 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 val total = userCarts[chatId]?.sumOf { it.price } ?: 0
                 val kb = InlineKeyboardMarkup.create(
                     listOf(
-                        InlineKeyboardButton.CallbackData("➕ Добавить еще", "orderBtn"),
-                        InlineKeyboardButton.CallbackData("❌ Очистить", "cancelFinal")
+                        InlineKeyboardButton.CallbackData("🛒 Открыть корзину", "view_cart")
                     ),
-                    listOf(InlineKeyboardButton.CallbackData("🛒 Оформить заказ ($total руб.)", "checkout"))
+                    listOf(
+                        InlineKeyboardButton.CallbackData("➕ Добавить товар", "orderBtn")
+                    ),
+                    listOf(
+                        InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn")
+                    )
                 )
+
                 bot.editMessageText(
                     ChatId.fromId(chatId), msgId,
                     text = "✅ <b>${selection.brand} ($flav)</b> добавлен в корзину!\n\n" +
-                            "🛍️ В корзине товаров: ${userCarts[chatId]?.size}\n" +
-                            "💰 Текущая сумма: <b>$total руб.</b>\n\nЧто делаем дальше?",
+                            "🛍️ В корзине: ${userCarts[chatId]?.size} товаров\n" +
+                            "💰 Сумма: <b>$total руб.</b>\n\nЧто делаем дальше?",
                     parseMode = ParseMode.HTML, replyMarkup = kb, disableWebPagePreview = true
                 )
             }
@@ -559,16 +806,48 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
+
+            selection.addressInput?.let { BotState.userLastAddresses[chatId] = it.copy() }
             selection.state = UserState.AWAITING_DATETIME
             activeMenus[chatId]?.let { menuId ->
                 bot.editMessageText(
                     chatId = ChatId.fromId(chatId), messageId = menuId,
                     text = "📅 Отлично! Теперь напишите <b>Дату и Время доставки</b>:\n" +
                             "⚠️ <b>ФОРМАТ:</b> Число месяц время\n" +
-                            "👉 <i>Например: 16 апреля 18:30</i>",
-                    parseMode = ParseMode.HTML
+                            "👉 <i>Например: 16 апреля 18:30</i>\n\n" ,
+                    parseMode = ParseMode.HTML,
+                    replyMarkup = InlineKeyboardMarkup.create(
+                        listOf(listOf(InlineKeyboardButton.CallbackData("🛒 Вернуться к корзине", "view_cart")))
+                    )
                 )
             }
+        }
+
+        callbackQuery("use_saved_address") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val selection = currentSelections[chatId] ?: return@callbackQuery
+
+            val savedAddr = BotState.userLastAddresses[chatId] ?: return@callbackQuery
+
+            selection.isDelivery = true
+            selection.deliveryType = "courier"
+            selection.addressInput = savedAddr.copy()
+            selection.addressStep = AddressStep.CONFIRM
+            selection.state = UserState.AWAITING_DATETIME
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId), messageId = msgId,
+                text = " Используем прошлый адрес: <b>${savedAddr.formatForUser()}</b>\n\n" +
+                        "📅 Напишите <b>Дату и Время доставки</b>:\n" +
+                        "⚠️ <b>ФОРМАТ:</b> Число месяц время\n" +
+                        "👉 <i>Например: 16 апреля 18:30</i>",
+                parseMode = ParseMode.HTML,
+                replyMarkup = InlineKeyboardMarkup.create(
+                    listOf(listOf(InlineKeyboardButton.CallbackData("🛒 Вернуться к корзине", "view_cart")))
+                )
+            )
         }
 
         callbackQuery("addr_skip_flat") {
@@ -627,10 +906,24 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 text = "✍️ <b>Введите реферальный код вашего друга:</b>\n\n",
                 parseMode = ParseMode.HTML,
                 replyMarkup = InlineKeyboardMarkup.create(
-                    listOf(listOf(InlineKeyboardButton.CallbackData("🔙 Назад к корзине", "checkout")))
+                    listOf(
+                        listOf(InlineKeyboardButton.CallbackData("⏭️ Пропустить", "skip_referral")),
+                        listOf(InlineKeyboardButton.CallbackData("🔙 Назад к корзине", "view_cart"))
+                    )
                 )
             )
         }
+
+        callbackQuery("skip_referral") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val selection = currentSelections[chatId] ?: return@callbackQuery
+
+            selection.state = UserState.IDLE
+            renderCheckout(bot, chatId, msgId, userCarts[chatId], selection)
+        }
+
         callbackQuery {
             val data = callbackQuery.data
             if (!data.startsWith("admin_paid_")) return@callbackQuery
@@ -641,12 +934,10 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
 
-            // Применяем скидку, если она была
             if (pendingOrder.discountUsed) {
                 consumeUserDiscount(pendingOrder.userId)
             }
 
-            // Применяем реферальный код, если он был
             if (pendingOrder.referralCode != null) {
                 val referralResult = applyReferralCode(pendingOrder.referralCode!!)
                 if (referralResult != null) {
@@ -658,7 +949,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                     } else if (currentInvites < 5) {
                         "🎉 Поздравляем! По вашему коду только что оформили заказ!\nДо получения скидки 8% осталось пригласить: <b>${5 - currentInvites} чел.</b> ($currentInvites/5)"
                     } else {
-                        "🎉 По вашему коду оформили еще один заказ! Ваша скидка 8% активна."
+                        "🎉 По вашему промокоду оформили еще один заказ! Ваша скидка 8% активна."
                     }
 
                     bot.sendMessage(ChatId.fromId(ownerId), congratulation, parseMode = ParseMode.HTML)
@@ -676,7 +967,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
 
             bot.sendMessage(
                 ChatId.fromId(pendingOrder.chatId),
-                text = "✅ <b>Ваш заказ #$orderId подтверждён!</b>\n\nЕсли у вас остались вопросы, свяжитесь с менеджером: @ERS_rrs",
+                text = "✅ <b>Ваш заказ #$orderId подтверждён как успешный!</b>\n\nЕсли у вас остались вопросы, пожалуйста, свяжитесь с менеджером: @ERS_rrs",
                 parseMode = ParseMode.HTML
             )
         }
