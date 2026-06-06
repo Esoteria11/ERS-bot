@@ -208,3 +208,89 @@ fun consumeUserDiscount(userId: Long) {
         }
     }
 }
+
+// Сохранение заказа в историю
+fun saveOrderToHistory(
+    orderId: String,
+    userId: Long,
+    username: String?,
+    items: String,
+    totalAmount: Int,
+    deliveryType: String?,
+    referralCode: String?
+) {
+    val spreadsheetId = BotConfig.SHEETS_ID
+    val sheetName = "OrdersHistory"
+
+    val newRow = listOf(
+        java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+        orderId,
+        userId.toString(),
+        username ?: "Unknown",
+        items,
+        totalAmount.toString(),
+        deliveryType ?: "Unknown",
+        if (referralCode != null) "Yes" else "No"
+    )
+
+    val sheetsService = createSheetsService()
+    val body = ValueRange().setValues(listOf(newRow))
+
+    sheetsService.spreadsheets().values()
+        .append(spreadsheetId, "$sheetName!A1", body)
+        .setValueInputOption("USER_ENTERED")
+        .execute()
+
+    println("✅ Заказ $orderId сохранён в историю")
+}
+
+fun getWeeklyOrders(): List<Map<String, String>> {
+    val spreadsheetId = BotConfig.SHEETS_ID
+    val sheetName = "OrdersHistory"
+    val range = "$sheetName!A2:H"
+
+    val sheetsService = createSheetsService()
+    val response = sheetsService.spreadsheets().values().get(spreadsheetId, range).execute()
+    val rows = response.getValues() ?: return emptyList()
+
+    val oneWeekAgo = java.time.LocalDateTime.now().minusWeeks(1)
+    val orders = mutableListOf<Map<String, String>>()
+
+    // Список форматов, которые может выдать Google Sheets
+    val dateFormats = listOf(
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd H:mm:ss"), // Sheets часто убирает ведущий ноль у часа
+        java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"),
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    )
+
+    for (row in rows) {
+        if (row.size < 8) continue
+
+        val dateStr = row[0].toString().trim()
+        if (dateStr.isBlank()) continue
+
+        var parsedDate: java.time.LocalDateTime? = null
+        for (fmt in dateFormats) {
+            try {
+                parsedDate = java.time.LocalDateTime.parse(dateStr, fmt)
+                break
+            } catch (_: Exception) { }
+        }
+
+        if (parsedDate == null) continue // Не смогли распарсить — пропускаем строку
+
+        if (parsedDate.isAfter(oneWeekAgo)) {
+            orders.add(mapOf(
+                "date" to dateStr,
+                "orderId" to row[1].toString(),
+                "userId" to row[2].toString(),
+                "username" to row[3].toString(),
+                "items" to row[4].toString(),
+                "totalAmount" to row[5].toString(),
+                "deliveryType" to row[6].toString(),
+                "referralUsed" to row[7].toString()
+            ))
+        }
+    }
+    return orders
+}
