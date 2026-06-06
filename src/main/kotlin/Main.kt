@@ -2,6 +2,7 @@ package ersbot
 
 import ersbot.config.BotConfig
 import ersbot.config.BotState
+import ersbot.config.Scheduler
 import ersbot.handlers.registerCallbacks
 import ersbot.handlers.registerCommands
 import ersbot.handlers.registerTextHandler
@@ -11,7 +12,7 @@ import com.github.kotlintelegrambot.dispatch
 fun main() {
     BotState.reloadCatalog()
 
-    bot {
+    val bot = bot {
         token = BotConfig.BOT_TOKEN
 
         dispatch {
@@ -19,7 +20,10 @@ fun main() {
             registerCallbacks(this)
             registerTextHandler(this)
         }
-    }.startPolling()
+    }
+
+    Scheduler.startWeeklyReportScheduler(bot)
+    bot.startPolling()
 
     println("✅ Бот успешно запущен!")
 }

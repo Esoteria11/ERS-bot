@@ -956,6 +956,17 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 }
             }
 
+            val itemsText = pendingOrder.items.joinToString(", ") { "${it.brand} (${it.flavor})" }
+            saveOrderToHistory(
+                orderId = orderId,
+                userId = pendingOrder.userId,
+                username = pendingOrder.username,
+                items = itemsText,
+                totalAmount = pendingOrder.totalAmount,
+                deliveryType = pendingOrder.deliveryType,
+                referralCode = pendingOrder.referralCode
+            )
+
             BotState.pendingOrders.remove(orderId)
 
             bot.editMessageText(
