@@ -12,6 +12,7 @@ import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
 import data.ALL_STREETS
 import ersbot.services.*
 import ersbot.config.BotConfig
+import ersbot.config.BotState
 import ersbot.config.BotState.activeMenus
 import ersbot.config.BotState.catalog
 import ersbot.config.BotState.currentSelections
@@ -186,7 +187,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val selection = currentSelections[chatId] ?: return@callbackQuery
             selection.isDelivery = true
             selection.deliveryType = "pickup"
-            selection.state = BotState.IDLE
+            selection.state = UserState.IDLE
             renderCheckout(bot, chatId, msgId, userCarts[chatId], selection)
         }
 
@@ -197,7 +198,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val selection = currentSelections[chatId] ?: return@callbackQuery
             selection.isDelivery = true
             selection.deliveryType = "courier"
-            selection.state = BotState.AWAITING_ADDRESS
+            selection.state = UserState.AWAITING_ADDRESS
             selection.addressStep = AddressStep.SELECT_CITY
             selection.addressInput = AddressInput()
             bot.editMessageText(
@@ -215,7 +216,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val selection = currentSelections[chatId] ?: return@callbackQuery
             selection.addressStep = AddressStep.SELECT_CITY
             selection.addressInput = AddressInput()
-            selection.state = BotState.AWAITING_ADDRESS
+            selection.state = UserState.AWAITING_ADDRESS
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId),
                 messageId = msgId,
@@ -280,9 +281,9 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             selection.isDelivery = false
             selection.deliveryType = ""
             selection.addressInput = null
-            selection.datetime = ""  // ✅ ДОБАВЛЕНО: сброс даты и времени
+            selection.datetime = ""
             selection.addressStep = AddressStep.SELECT_CITY
-            selection.state = BotState.IDLE
+            selection.state = UserState.IDLE
 
             renderCheckout(bot, chatId, msgId, userCarts[chatId], selection)
         }
@@ -322,6 +323,9 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 adminReceipt += "${i + 1}. ${item.category} ${item.brand} — ${item.flavor} (${item.price} руб.)\n"
             }
 
+            var addressText: String? = null
+            var datetimeText: String? = null
+
             if (selection.isDelivery) {
                 if (selection.deliveryType == "pickup") {
                     adminReceipt += "\n🏃‍♂️ <b>Получение</b>: Самовывоз"
@@ -334,35 +338,45 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             }
 
             if (selection.enteredReferralCode != null) {
-                val referralResult = applyReferralCode(selection.enteredReferralCode!!)
-                if (referralResult != null) {
-                    val ownerId = referralResult.first
-                    val currentInvites = referralResult.second
+                adminReceipt += "\n🤝 <b>Использован код друга:</b> ${selection.enteredReferralCode}"            }
 
-                    val congratulation = if (currentInvites == 5) {
-                        "🎉 <b>УРА!</b> По вашему коду оформили 5-й заказ!\nВам доступна <b>скидка 8% на следующий заказ</b>!"
-                    } else if (currentInvites < 5) {
-                        "🎉 Поздравляем! По вашему коду только что оформили заказ!\nДо получения скидки 8% осталось пригласить: <b>${5 - currentInvites} чел.</b> ($currentInvites/5)"
-                    } else {
-                        "🎉 По вашему коду оформили еще один заказ! Ваша скидка 8% активна."
-                    }
+            val orderId = (1000..9999).random().toString()
 
-                    bot.sendMessage(ChatId.fromId(ownerId), congratulation, parseMode = ParseMode.HTML)
-                }
-                adminReceipt += "\n🤝 <b>Использован код друга:</b> ${selection.enteredReferralCode}"
-            }
+            val pendingOrder = PendingOrder(
+                userId = userId,
+                chatId = chatId,
+                username = callbackQuery.message?.chat?.username,
+                orderId = orderId,
+                items = cart.toList(),
+                totalAmount = finalSum.toInt(),
+                discountUsed = discountUsed,
+                referralCode = selection.enteredReferralCode,
+                deliveryType = selection.deliveryType,
+                address = addressText,
+                datetime = datetimeText
+            )
+
+            BotState.pendingOrders[orderId] = pendingOrder
 
             val adminText = "🚨 <b>НОВЫЙ ЗАКАЗ!</b>\n\n" +
                     "<b>Покупатель:</b> @${callbackQuery.message?.chat?.username ?: "Скрыт (ID: $chatId)"}\n\n" +
                     "<b>Товары:</b>\n$adminReceipt\n" +
-                    "💰 <b>Общая сумма к оплате: ${finalSum.toInt()} руб.</b> $discountText"
+                    "💰 <b>Общая сумма к оплате: ${finalSum.toInt()} руб.</b> $discountText" +
+                    "<b>Подтвердите действие:</b>"
 
-            bot.sendMessage(ChatId.fromId(BotConfig.ADMIN_ID), text = adminText, parseMode = ParseMode.HTML)
+
+
+            bot.sendMessage(
+                ChatId.fromId(BotConfig.ADMIN_ID),
+                text = adminText,
+                parseMode = ParseMode.HTML,
+                replyMarkup = getManagerOrderButtons(orderId)
+            )
 
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId,
                 text = "🎉 <b>Заказ принят! Спасибо за ваше доверие</b> ❤\n" +
-                        "Менеджер @ERS_rrs скоро свяжется с вами.\nНомер заказа: #<b>${(1000..9999).random()}</b>\n\n" +
+                        "Менеджер @ERS_rrs скоро свяжется с вами.\nНомер заказа: #<b>$orderId</b>\n\n" +
                         "💰 <b>К оплате: ${finalSum.toInt()} руб.</b> $discountText\n\n" +
                         "❗ Если в течение 15 минут Вам не отпишет менеджер, значит у вас скрыт ID или закрытый профиль. \n" +
                         "Убедительная просьба, напишите нам сами: @ERS_rrs",
@@ -377,10 +391,6 @@ fun registerCallbacks(dispatcher: Dispatcher) {
 
             userCarts.remove(chatId)
             currentSelections.remove(chatId)
-
-            if (discountUsed) {
-                consumeUserDiscount(userId)
-            }
         }
 
         callbackQuery("cancelFinal") {
@@ -549,7 +559,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
-            selection.state = BotState.AWAITING_DATETIME
+            selection.state = UserState.AWAITING_DATETIME
             activeMenus[chatId]?.let { menuId ->
                 bot.editMessageText(
                     chatId = ChatId.fromId(chatId), messageId = menuId,
@@ -610,7 +620,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             val selection = currentSelections[chatId] ?: return@callbackQuery
 
-            selection.state = BotState.AWAITING_REFERRAL_CODE
+            selection.state = UserState.AWAITING_REFERRAL_CODE
 
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId,
@@ -619,6 +629,81 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 replyMarkup = InlineKeyboardMarkup.create(
                     listOf(listOf(InlineKeyboardButton.CallbackData("🔙 Назад к корзине", "checkout")))
                 )
+            )
+        }
+        callbackQuery {
+            val data = callbackQuery.data
+            if (!data.startsWith("admin_paid_")) return@callbackQuery
+
+            val orderId = data.removePrefix("admin_paid_")
+            val pendingOrder = BotState.pendingOrders[orderId] ?: return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+
+            // Применяем скидку, если она была
+            if (pendingOrder.discountUsed) {
+                consumeUserDiscount(pendingOrder.userId)
+            }
+
+            // Применяем реферальный код, если он был
+            if (pendingOrder.referralCode != null) {
+                val referralResult = applyReferralCode(pendingOrder.referralCode!!)
+                if (referralResult != null) {
+                    val ownerId = referralResult.first
+                    val currentInvites = referralResult.second
+
+                    val congratulation = if (currentInvites == 5) {
+                        "🎉 <b>УРА!</b> По вашему коду оформили 5-й заказ!\nВам доступна <b>скидка 8% на следующий заказ</b>!"
+                    } else if (currentInvites < 5) {
+                        "🎉 Поздравляем! По вашему коду только что оформили заказ!\nДо получения скидки 8% осталось пригласить: <b>${5 - currentInvites} чел.</b> ($currentInvites/5)"
+                    } else {
+                        "🎉 По вашему коду оформили еще один заказ! Ваша скидка 8% активна."
+                    }
+
+                    bot.sendMessage(ChatId.fromId(ownerId), congratulation, parseMode = ParseMode.HTML)
+                }
+            }
+
+            BotState.pendingOrders.remove(orderId)
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = "✅ <b>Заказ #$orderId подтверждён как успешный!</b>\n\nРеферальные бонусы начислены.",
+                parseMode = ParseMode.HTML
+            )
+
+            bot.sendMessage(
+                ChatId.fromId(pendingOrder.chatId),
+                text = "✅ <b>Ваш заказ #$orderId подтверждён!</b>\n\nЕсли у вас остались вопросы, свяжитесь с менеджером: @ERS_rrs",
+                parseMode = ParseMode.HTML
+            )
+        }
+
+        callbackQuery {
+            val data = callbackQuery.data
+            if (!data.startsWith("admin_refused_")) return@callbackQuery
+
+            val orderId = data.removePrefix("admin_refused_")
+            val pendingOrder = BotState.pendingOrders[orderId] ?: return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+
+            BotState.pendingOrders.remove(orderId)
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = "❌ <b>Заказ #$orderId отменён.</b>\n\n Бонусы не были начислены.",
+                parseMode = ParseMode.HTML
+            )
+
+            bot.sendMessage(
+                ChatId.fromId(pendingOrder.chatId),
+                text = "❌ <b>К сожалению, ваш заказ #$orderId был отменён.</b>\n\nЕсли у вас есть вопросы, свяжитесь с менеджером: @ERS_rrs",
+                parseMode = ParseMode.HTML
             )
         }
     }

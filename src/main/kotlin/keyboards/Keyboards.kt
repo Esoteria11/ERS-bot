@@ -87,3 +87,12 @@ fun getAddressConfirmationKeyboard(): InlineKeyboardMarkup {
         )
     )
 }
+
+fun getManagerOrderButtons(orderId: String): InlineKeyboardMarkup {
+    return InlineKeyboardMarkup.Companion.create(
+        listOf(
+            listOf(InlineKeyboardButton.CallbackData("✅ Оплатил", "admin_paid_$orderId")),
+            listOf(InlineKeyboardButton.CallbackData("❌ Отказался", "admin_refused_$orderId"))
+        )
+    )
+}

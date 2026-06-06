@@ -7,6 +7,7 @@ object BotState {
     val userCarts = mutableMapOf<Long, MutableList<CartItem>>()
     val currentSelections = mutableMapOf<Long, CurrentSelection>()
     val activeMenus = mutableMapOf<Long, Long>()
+    val pendingOrders = mutableMapOf<String, PendingOrder>()
 
     var catalog: Map<String, Map<String, ProductDetails>> = emptyMap()
         private set

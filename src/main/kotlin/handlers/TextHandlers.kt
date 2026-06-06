@@ -1,6 +1,5 @@
 package ersbot.handlers
 
-import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.dispatcher.Dispatcher
 import com.github.kotlintelegrambot.dispatcher.text
 import com.github.kotlintelegrambot.entities.ChatId
@@ -33,7 +32,7 @@ fun registerTextHandler(dispatcher: Dispatcher) {
             val selection = currentSelections[chatId]
 
             when {
-                selection?.state == BotState.AWAITING_ADDRESS && selection.addressStep == AddressStep.ENTER_HOUSE -> {
+                selection?.state == UserState.AWAITING_ADDRESS && selection.addressStep == AddressStep.ENTER_HOUSE -> {
                     bot.deleteMessage(ChatId.fromId(chatId), message.messageId)
                     val result = validateAddressPart(userText, AddressStep.ENTER_HOUSE)
 
@@ -72,7 +71,7 @@ fun registerTextHandler(dispatcher: Dispatcher) {
                     }
                 }
 
-                selection?.state == BotState.AWAITING_ADDRESS && selection.addressStep == AddressStep.ENTER_FLAT -> {
+                selection?.state == UserState.AWAITING_ADDRESS && selection.addressStep == AddressStep.ENTER_FLAT -> {
                     bot.deleteMessage(ChatId.fromId(chatId), message.messageId)
 
                     if (userText == "⏭️ Пропустить" || userText.lowercase() == "пропустить") {
@@ -104,7 +103,7 @@ fun registerTextHandler(dispatcher: Dispatcher) {
                     }
                 }
 
-                selection?.state == BotState.AWAITING_DATETIME -> {
+                selection?.state == UserState.AWAITING_DATETIME -> {
                     bot.deleteMessage(ChatId.fromId(chatId), message.messageId)
                     val strictRegex = Regex(
                         "^\\s*([1-9]|[12]\\d|3[01])\\s+" +
@@ -128,13 +127,13 @@ fun registerTextHandler(dispatcher: Dispatcher) {
                         return@text
                     }
                     selection.datetime = userText
-                    selection.state = BotState.IDLE
+                    selection.state = UserState.IDLE
                     activeMenus[chatId]?.let { menuId ->
                         renderCheckout(bot, chatId, menuId, userCarts[chatId], selection)
                     }
                 }
 
-                selection?.state == BotState.AWAITING_REFERRAL_CODE -> {
+                selection?.state == UserState.AWAITING_REFERRAL_CODE -> {
                     val userId = message.from?.id ?: return@text
                     bot.deleteMessage(ChatId.fromId(chatId), message.messageId)
 
@@ -142,7 +141,7 @@ fun registerTextHandler(dispatcher: Dispatcher) {
 
                     if (isReferralCodeValid(inputCode, userId)) {
                         selection.enteredReferralCode = inputCode
-                        selection.state = BotState.IDLE
+                        selection.state = UserState.IDLE
 
                         activeMenus[chatId]?.let { menuId ->
                             bot.editMessageText(
