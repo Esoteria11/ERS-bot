@@ -45,7 +45,11 @@ fun fetchCatalogFromSheets(): Map<String, Map<String, ProductDetails>> {
         if (row.size < 6 || row[0].toString().isBlank()) continue
 
         val category = row[0].toString().trim()
-        val brand = row[1].toString().trim()
+        val brand = row[1].toString()
+            .replace("\u00A0", " ")
+            .replace("&amp;", "&")
+            .trim()
+            .replace(Regex("\\s+"), " ")
         val details = ProductDetails(
             price = row[2].toString().filter { it.isDigit() }.toIntOrNull() ?: 0,
             photoUrl = row[4].toString().trim(),
@@ -277,7 +281,7 @@ fun getWeeklyOrders(): List<Map<String, String>> {
             } catch (_: Exception) { }
         }
 
-        if (parsedDate == null) continue // Не смогли распарсить — пропускаем строку
+        if (parsedDate == null) continue
 
         if (parsedDate.isAfter(oneWeekAgo)) {
             orders.add(mapOf(
@@ -293,4 +297,99 @@ fun getWeeklyOrders(): List<Map<String, String>> {
         }
     }
     return orders
+}
+
+/**
+ * Обновляет количество товара после успешного заказа
+ * @param brand - название бренда (например, "WAKA EXTRA - PA20.000 100MG")
+ * @param flavor - вкус с количеством (например, "АРБУЗ СО ЛЬДОМ 1шт")
+ * @return true если успешно обновлено, false если товар не найден
+ */
+fun updateInventoryAfterOrder(brand: String, flavor: String): Boolean {
+    val spreadsheetId = BotConfig.SHEETS_ID
+    val sheetName = "Наличие"
+
+    val sheetsService = createSheetsService()
+    val range = "$sheetName!A2:F"
+
+    val response = sheetsService.spreadsheets().values().get(spreadsheetId, range).execute()
+    val rows = response.getValues() ?: return false
+
+    for ((rowIndex, row) in rows.withIndex()) {
+        if (row.size < 6) continue
+
+        val brandInTable = row[1].toString().trim()
+
+        if (brandInTable.equals(brand, ignoreCase = true) ||
+            brandInTable.contains(brand, ignoreCase = true)) {
+
+            val flavorsCell = row[5].toString().trim()
+
+            val flavorsList = flavorsCell.split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+            val updatedFlavors = mutableListOf<String>()
+            var flavorFound = false
+            var flavorRemoved = false
+
+            for (flavorItem in flavorsList) {
+                val flavorName = flavorItem.replace(Regex("\\s*\\d+шт"), "").trim()
+                val orderedFlavorName = flavor.replace(Regex("\\s*\\d+шт"), "").trim()
+
+                if (flavorName.equals(orderedFlavorName, ignoreCase = true)) {
+                    flavorFound = true
+
+                    val quantityMatch = Regex("(\\d+)шт").find(flavorItem)
+                    val currentQty = quantityMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
+                    val newQty = currentQty - 1
+
+                    if (newQty > 0) {
+                        updatedFlavors.add("$flavorName ${newQty}шт")
+                    } else {
+                        flavorRemoved = true
+                    }
+                } else {
+                    updatedFlavors.add(flavorItem)
+                }
+            }
+
+            if (!flavorFound) {
+                println("⚠️ Вкус '$flavor' не найден в бренде '$brand'")
+                return false
+            }
+
+            val actualRowIndex = rowIndex + 2
+            val updateRange = "$sheetName!F$actualRowIndex"
+
+            val newFlavorsText = if (updatedFlavors.isEmpty()) {
+                ""
+            } else {
+                updatedFlavors.joinToString(", ")
+            }
+
+            val body = ValueRange().setValues(listOf(listOf(newFlavorsText)))
+            sheetsService.spreadsheets().values()
+                .update(spreadsheetId, updateRange, body)
+                .setValueInputOption("USER_ENTERED")
+                .execute()
+
+            println("✅ Обновлён инвентарь: $brand - $flavor (осталось: $newFlavorsText)")
+            return true
+        }
+    }
+
+    println("⚠️ Бренд '$brand' не найден в таблице")
+    return false
+}
+
+fun updateInventoryForOrder(items: List<ersbot.models.CartItem>): Map<String, Boolean> {
+    val results = mutableMapOf<String, Boolean>()
+
+    for (item in items) {
+        val flavorWithQty = "${item.flavor} 1шт"
+        val success = updateInventoryAfterOrder(item.brand, flavorWithQty)
+        results["${item.brand} - ${item.flavor}"] = success
+    }
+
+    return results
 }
