@@ -22,6 +22,13 @@ import ersbot.keyboards.*
 import ersbot.models.*
 import services.*
 
+fun escapeHtml(text: String): String {
+    return text
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+}
+
 fun registerCallbacks(dispatcher: Dispatcher) {
     with(dispatcher) {
 
@@ -68,7 +75,6 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             currentSelections[chatId] = CurrentSelection()
 
-            // Используем новую функцию с динамической корзиной
             val categoryButtons = getCategoryKeyboardWithCart(chatId, catalog.keys.toList())
 
             bot.editMessageText(
@@ -171,7 +177,6 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             }
         }
 
-        // НОВЫЙ ОБРАБОТЧИК: Удаление товара из корзины
         callbackQuery {
             val data = callbackQuery.data
             if (!data.startsWith("cart_remove_")) return@callbackQuery
@@ -327,7 +332,6 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             }
         }
 
-// Обработчик: Отмена удаления
         callbackQuery("cart_delete_cancel") {
             if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
@@ -740,37 +744,77 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 )
             } else if (data.startsWith("b_")) {
                 val brand = data.removePrefix("b_")
+                    .replace("\u00A0", " ")
+                    .replace("&amp;", "&")
+                    .trim()
+                    .replace(Regex("\\s+"), " ")
+
                 selection.brand = brand
-                val info = catalog[selection.category]?.get(brand) ?: return@callbackQuery
-                selection.price = info.price
-                val flavors =
-                    info.flavors.map { listOf(InlineKeyboardButton.CallbackData(it, "f_$it")) }.toMutableList()
-                flavors.add(listOf(InlineKeyboardButton.CallbackData("🔙 Назад к брендам", "c_${selection.category}")))
-                val hasPhoto = info.photoUrl.isNotBlank()
 
-                val descriptionBlock = if (info.description.isNotBlank()) {
-                    "\n📝 <b>Описание:</b>\n${info.description}\n"
-                } else {
-                    ""
+                val info = catalog[selection.category]?.get(brand)
+
+                if (info == null) {
+                    bot.answerCallbackQuery(callbackQuery.id, "⚠️ Товар временно недоступен", showAlert = true)
+                    return@callbackQuery
                 }
 
-                val textWithPhoto = if (hasPhoto) {
-                    "<a href=\"${info.photoUrl}\">&#8203;</a>⭐ <b>Бренд:</b> $brand\n" +
-                            "💰 <b>Цена:</b> ${info.price} руб.\n" +
-                            descriptionBlock +
-                            "\n👇 Выбери желаемый вкус:"
-                } else {
-                    "⭐ <b>Бренд:</b> $brand\n" +
-                            "💰 <b>Цена:</b> ${info.price} руб.\n" +
-                            descriptionBlock +
-                            "\n👇 Выбери желаемый вкус:"
+                try {
+                    selection.price = info.price
+                    selection.currentFlavors = info.flavors
+
+                    val escapedBrand = escapeHtml(brand)
+
+                    val flavors = info.flavors.mapIndexed { index, flavor ->
+                        listOf(InlineKeyboardButton.CallbackData(flavor, "f_$index"))
+                    }.toMutableList()
+
+                    flavors.add(listOf(InlineKeyboardButton.CallbackData("🔙 Назад к брендам", "c_${selection.category}")))
+
+                    val hasPhoto = info.photoUrl.isNotBlank()
+
+                    val descriptionBlock = if (info.description.isNotBlank()) {
+                        "\n📝 <b>Описание:</b>\n${escapeHtml(info.description)}\n"
+                    } else {
+                        ""
+                    }
+
+                    val textWithPhoto = if (hasPhoto) {
+                        "<a href=\"${info.photoUrl}\">&#8203;</a>⭐ <b>Бренд:</b> $escapedBrand\n" +
+                                "💰 <b>Цена:</b> ${info.price} руб.\n" +
+                                descriptionBlock +
+                                "\n👇 Выбери желаемый вкус:"
+                    } else {
+                        "⭐ <b>Бренд:</b> $escapedBrand\n" +
+                                "💰 <b>Цена:</b> ${info.price} руб.\n" +
+                                descriptionBlock +
+                                "\n👇 Выбери желаемый вкус:"
+                    }
+
+                    bot.editMessageText(
+                        ChatId.fromId(chatId), msgId, text = textWithPhoto, parseMode = ParseMode.HTML,
+                        replyMarkup = InlineKeyboardMarkup.create(flavors), disableWebPagePreview = !hasPhoto
+                    )
+
+                } catch (e: Exception) {
+                    bot.answerCallbackQuery(callbackQuery.id, "⚠️ Произошла ошибка", showAlert = true)
                 }
-                bot.editMessageText(
-                    ChatId.fromId(chatId), msgId, text = textWithPhoto, parseMode = ParseMode.HTML,
-                    replyMarkup = InlineKeyboardMarkup.create(flavors), disableWebPagePreview = !hasPhoto
-                )
             } else if (data.startsWith("f_")) {
-                val flav = data.removePrefix("f_")
+                val flavorIndex = data.removePrefix("f_").toIntOrNull()
+
+                if (flavorIndex == null) {
+                    return@callbackQuery
+                }
+
+                val flav = selection.currentFlavors.getOrNull(flavorIndex)
+
+                if (flav == null) {
+                    bot.answerCallbackQuery(callbackQuery.id, "⚠️ Вкус не найден", showAlert = true)
+                    return@callbackQuery
+                }
+
+                val escapedFlav = escapeHtml(flav)
+                val escapedBrand = escapeHtml(selection.brand)
+
                 userCarts.getOrPut(chatId) { mutableListOf() }.add(
                     CartItem(
                         selection.category,
@@ -782,7 +826,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 val total = userCarts[chatId]?.sumOf { it.price } ?: 0
                 val kb = InlineKeyboardMarkup.create(
                     listOf(
-                        InlineKeyboardButton.CallbackData("🛒 Открыть корзину", "view_cart")
+                        InlineKeyboardButton.CallbackData("🛒 Смотреть корзину", "view_cart")
                     ),
                     listOf(
                         InlineKeyboardButton.CallbackData("➕ Добавить товар", "orderBtn")
@@ -792,13 +836,16 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                     )
                 )
 
-                bot.editMessageText(
-                    ChatId.fromId(chatId), msgId,
-                    text = "✅ <b>${selection.brand} ($flav)</b> добавлен в корзину!\n\n" +
-                            "🛍️ В корзине: ${userCarts[chatId]?.size} товаров\n" +
-                            "💰 Сумма: <b>$total руб.</b>\n\nЧто делаем дальше?",
-                    parseMode = ParseMode.HTML, replyMarkup = kb, disableWebPagePreview = true
-                )
+                try {
+                    bot.editMessageText(
+                        ChatId.fromId(chatId), msgId,
+                        text = "✅ <b>$escapedBrand ($escapedFlav)</b> добавлен в корзину!\n\n" +
+                                "🛍️ В корзине: ${userCarts[chatId]?.size} товаров\n" +
+                                "💰 Сумма: <b>$total руб.</b>\n\nЧто делаем дальше?",
+                        parseMode = ParseMode.HTML, replyMarkup = kb, disableWebPagePreview = true
+                    )
+                } catch (e: Exception) {
+                }
             }
         }
 
@@ -966,6 +1013,8 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 deliveryType = pendingOrder.deliveryType,
                 referralCode = pendingOrder.referralCode
             )
+
+            updateInventoryForOrder(pendingOrder.items)
 
             BotState.pendingOrders.remove(orderId)
 

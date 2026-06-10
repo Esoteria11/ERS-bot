@@ -159,10 +159,10 @@ fun registerTextHandler(dispatcher: Dispatcher) {
                             bot.editMessageText(
                                 chatId = ChatId.fromId(chatId),
                                 messageId = menuId,
-                                text = "❌ <b>Ошибка!</b>\nТакого кода не существует, либо вы ввели свой собственный код.\n\nПопробуйте ввести заново или вернитесь в корзину:",
+                                text = "❌ <b>Ошибка!</b>\nТакого кода не существует, либо вы ввели свой собственный код.\n\nПопробуйте заново или вернитесь назад:",
                                 parseMode = ParseMode.HTML,
                                 replyMarkup = InlineKeyboardMarkup.create(
-                                    listOf(listOf(InlineKeyboardButton.CallbackData("🔙 Вернуться к корзине", "checkout")))
+                                    listOf(listOf(InlineKeyboardButton.CallbackData("🔙 Назад", "checkout")))
                                 )
                             )
                         }

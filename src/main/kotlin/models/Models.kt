@@ -47,7 +47,8 @@ data class CurrentSelection(
     var state: UserState = UserState.IDLE,
     var addressStep: AddressStep = AddressStep.SELECT_CITY,
     var itemsConfirmed: Boolean = false,
-    var enteredReferralCode: String? = null
+    var enteredReferralCode: String? = null,
+    var currentFlavors: List<String> = emptyList()
 )
 
 data class ProductDetails(
