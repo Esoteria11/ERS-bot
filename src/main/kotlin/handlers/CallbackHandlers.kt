@@ -139,6 +139,28 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             )
         }
 
+        callbackQuery("menu_after_order") {
+            if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = mainMenuText,
+                parseMode = ParseMode.HTML,
+                replyMarkup = getMainMenuKeyboard(),
+                disableWebPagePreview = true
+            )
+
+            bot.editMessageReplyMarkup(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                replyMarkup = null
+            )
+
+            bot.answerCallbackQuery(callbackQuery.id)
+        }
+
         callbackQuery("view_cart") {
             if (!checkSubAndReturn(bot, callbackQuery)) return@callbackQuery
             val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
@@ -385,7 +407,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId,
-                text = "Выберите способ получения заказа:",
+                text = "Выберите способ получения заказа:\n\n⏱\uFE0F Доставка обычно занимает 20-40 минут",
                 replyMarkup = getDeliveryKeyboard(chatId)
             )
         }
@@ -619,17 +641,25 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 replyMarkup = getManagerOrderButtons(orderId)
             )
 
+            val itemsList = cart.joinToString("\n") {
+                item -> "• ${item.category} ${item.brand} — ${item.flavor}"
+            }
+
+            val orderMessage = "🎉 <b>Заказ принят! Спасибо за ваше доверие</b> ❤\n\n" +
+                    "📦 <b>Ваш заказ:</b>\n$itemsList\n\n" +
+                    "💰 <b>К оплате: ${finalSum.toInt()} руб.</b> $discountText\n\n" +
+                    "📋 <b>Номер заказа: #$orderId</b>\n\n" +
+                    "Менеджер @ERS_rrs скоро свяжется с вами.\n" +
+                    "❗ Если в течение 15 минут Вам не отпишет менеджер, значит у вас скрыт ID или закрытый профиль. \n" +
+                    "Убедительная просьба, напишите нам сами: @ERS_rrs"
+
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId), messageId = msgId,
-                text = "🎉 <b>Заказ принят! Спасибо за ваше доверие</b> ❤\n" +
-                        "Менеджер @ERS_rrs скоро свяжется с вами.\nНомер заказа: #<b>$orderId</b>\n\n" +
-                        "💰 <b>К оплате: ${finalSum.toInt()} руб.</b> $discountText\n\n" +
-                        "❗ Если в течение 15 минут Вам не отпишет менеджер, значит у вас скрыт ID или закрытый профиль. \n" +
-                        "Убедительная просьба, напишите нам сами: @ERS_rrs",
+                text = orderMessage,
                 parseMode = ParseMode.HTML,
                 replyMarkup = InlineKeyboardMarkup.create(
                     listOf(
-                        listOf(InlineKeyboardButton.CallbackData("🔙 В меню", "backToMenuBtn"))
+                        listOf(InlineKeyboardButton.CallbackData("\uD83C\uDFE0 В главное меню", "menu_after_order"))
                     )
                 ),
                 disableWebPagePreview = true
@@ -826,10 +856,10 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 val total = userCarts[chatId]?.sumOf { it.price } ?: 0
                 val kb = InlineKeyboardMarkup.create(
                     listOf(
-                        InlineKeyboardButton.CallbackData("🛒 Смотреть корзину", "view_cart")
+                        InlineKeyboardButton.CallbackData("✅ Оформить заказ", "checkout")
                     ),
                     listOf(
-                        InlineKeyboardButton.CallbackData("➕ Добавить товар", "orderBtn")
+                        InlineKeyboardButton.CallbackData("🛒 Смотреть корзину", "view_cart")
                     ),
                     listOf(
                         InlineKeyboardButton.CallbackData("🔙 Назад в меню", "backToMenuBtn")
@@ -1018,10 +1048,20 @@ fun registerCallbacks(dispatcher: Dispatcher) {
 
             BotState.pendingOrders.remove(orderId)
 
+            val itemsList = pendingOrder.items.joinToString("\n") {
+                item -> "• ${item.category} ${item.brand} — ${item.flavor} (${item.price} руб.)"
+            }
+
+            val orderDetails = "✅ <b>Заказ #$orderId подтверждён как успешный!</b>\n\n" +
+                    "👤 <b>Покупатель:</b> @${pendingOrder.username ?: "Скрыт (ID: ${pendingOrder.userId})"}\n" +
+                    "📦 <b>Товары:</b>\n$itemsList\n\n" +
+                    "💰 <b>Сумма:</b> ${pendingOrder.totalAmount} руб.\n\n" +
+                    "Реферальные бонусы начислены."
+
             bot.editMessageText(
                 chatId = ChatId.fromId(chatId),
                 messageId = msgId,
-                text = "✅ <b>Заказ #$orderId подтверждён как успешный!</b>\n\nРеферальные бонусы начислены.",
+                text = orderDetails,
                 parseMode = ParseMode.HTML
             )
 
