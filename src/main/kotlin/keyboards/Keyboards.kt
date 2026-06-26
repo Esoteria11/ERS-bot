@@ -14,7 +14,7 @@ fun getMainMenuKeyboard(): InlineKeyboardMarkup {
         ),
         listOf(
             InlineKeyboardButton.CallbackData(text = "\uD83D\uDD52 Расписание", callbackData = "scheduleBtn"),
-            InlineKeyboardButton.CallbackData(text = "❓ Задать вопрос", callbackData = "questionBtn")
+            InlineKeyboardButton.CallbackData(text = "❓ Поддержка 24/7", callbackData = "questionBtn")
         ),
         listOf(
             InlineKeyboardButton.Url(text = "📢 Наш канал", url = "https://t.me/+0QYXuyrVVKwwMDhi"),
