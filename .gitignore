@@ -46,7 +46,7 @@ bin/
 
 ### Secrets ###
 credentials.json
-.env
+test.env
 *.env
 local.properties
 *.key
