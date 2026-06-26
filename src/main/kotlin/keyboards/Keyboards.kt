@@ -13,15 +13,18 @@ fun getMainMenuKeyboard(): InlineKeyboardMarkup {
             InlineKeyboardButton.CallbackData(text = "📦 Сделать заказ", callbackData = "orderBtn")
         ),
         listOf(
-            InlineKeyboardButton.CallbackData(text = "\uD83D\uDD52 Расписание", callbackData = "scheduleBtn"),
-            InlineKeyboardButton.CallbackData(text = "❓ Поддержка 24/7", callbackData = "questionBtn")
+            InlineKeyboardButton.Url(text = "⭐ Отзывы", url = "https://t.me/+EeJL0ODGc3gzOWFi"),
+            InlineKeyboardButton.CallbackData(text = "\uD83D\uDD52 Расписание", callbackData = "scheduleBtn")
         ),
         listOf(
-            InlineKeyboardButton.Url(text = "📢 Наш канал", url = "https://t.me/+0QYXuyrVVKwwMDhi"),
-            InlineKeyboardButton.Url(text = "⭐ Отзывы", url = "https://t.me/+EeJL0ODGc3gzOWFi")
+            InlineKeyboardButton.CallbackData(text = "🎁 Скидки", callbackData = "refSystemBtn"),
+            InlineKeyboardButton.CallbackData(text = "\uD83D\uDCAC Поддержка 24/7", callbackData = "questionBtn")
         ),
         listOf(
-            InlineKeyboardButton.CallbackData(text = "🎁 Реферальная система", callbackData = "refSystemBtn")
+            InlineKeyboardButton.Url(text = "❓ Как пользоваться ботом?", url = "https://t.me/c/3845528783/57")
+        ),
+        listOf(
+            InlineKeyboardButton.Url(text = "📢 Наш канал", url = "https://t.me/+tTmW2d4dUilmYWUy"),
         )
     )
 }
