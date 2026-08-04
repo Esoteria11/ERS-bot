@@ -122,11 +122,29 @@ fun getAddressConfirmationKeyboard(): InlineKeyboardMarkup {
     )
 }
 
-fun getManagerOrderButtons(orderId: String): InlineKeyboardMarkup {
-    return InlineKeyboardMarkup.Companion.create(
+fun getManagerOrderButtons(orderId: String, stage: String): InlineKeyboardMarkup {
+    val stageButton = when (stage) {
+        "created" -> listOf(InlineKeyboardButton.CallbackData("✅ Ответил клиенту", "stage_answer_$orderId"))
+        "answered" -> listOf(InlineKeyboardButton.CallbackData("📦 Заказ собран", "stage_assembled_$orderId"))
+        "assembled" -> listOf(InlineKeyboardButton.CallbackData("🤝 Заказ выдан", "stage_handed_$orderId"))
+        "handed" -> listOf(InlineKeyboardButton.CallbackData("💰 Завершить и принять оплату", "stage_complete_$orderId"))
+        else -> listOf(InlineKeyboardButton.CallbackData("✅ Оплатил", "admin_paid_$orderId"))
+    }
+
+    return InlineKeyboardMarkup.create(
         listOf(
-            listOf(InlineKeyboardButton.CallbackData("✅ Оплатил", "admin_paid_$orderId")),
+            stageButton,
             listOf(InlineKeyboardButton.CallbackData("❌ Отказался", "admin_refused_$orderId"))
+        )
+    )
+}
+
+fun getPaymentTypeKeyboard(orderId: String): InlineKeyboardMarkup {
+    return InlineKeyboardMarkup.create(
+        listOf(
+            listOf(InlineKeyboardButton.CallbackData("💵 Наличные", "pay_cash_$orderId")),
+            listOf(InlineKeyboardButton.CallbackData("💳 Перевод", "pay_transfer_$orderId")),
+            listOf(InlineKeyboardButton.CallbackData("🔀 Смешанная", "pay_mixed_$orderId"))
         )
     )
 }

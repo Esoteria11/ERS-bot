@@ -6,6 +6,7 @@ import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.entities.ParseMode
 import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
+import ersbot.config.BotState
 import ersbot.config.BotState.activeMenus
 import ersbot.config.BotState.currentSelections
 import ersbot.config.BotState.userCarts
@@ -20,6 +21,44 @@ fun registerTextHandler(dispatcher: Dispatcher) {
         text {
 
             if (message.text?.startsWith("/") == true) {
+                return@text
+            }
+
+            val payChatId = message.chat.id
+            if (BotState.mixedPaymentState.containsKey(payChatId)) {
+                val (orderId, promptMsgId) = BotState.mixedPaymentState[payChatId]!!
+                BotState.mixedPaymentState.remove(payChatId)
+
+                bot.deleteMessage(ChatId.fromId(payChatId), message.messageId)
+
+                val parts = (message.text ?: "").trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+                val cash = parts.getOrNull(0)?.toIntOrNull()
+                val transfer = parts.getOrNull(1)?.toIntOrNull()
+
+                if (parts.size != 2 || cash == null || transfer == null) {
+                    BotState.mixedPaymentState[payChatId] = orderId to promptMsgId
+                    bot.editMessageText(
+                        chatId = ChatId.fromId(payChatId),
+                        messageId = promptMsgId,
+                        text = "❌ Неверный формат. Введите два числа через пробел:\n<b>500 1000</b>",
+                        parseMode = ParseMode.HTML
+                    )
+                    return@text
+                }
+
+                val order = BotState.pendingOrders[orderId]
+                if (order != null && cash + transfer != order.totalAmount) {
+                    BotState.mixedPaymentState[payChatId] = orderId to promptMsgId
+                    bot.editMessageText(
+                        chatId = ChatId.fromId(payChatId),
+                        messageId = promptMsgId,
+                        text = "❌ Суммы не сходятся с итогом заказа (${order.totalAmount}₽).\nВведите заново: <b>наличные перевод</b>",
+                        parseMode = ParseMode.HTML
+                    )
+                    return@text
+                }
+
+                completeOrderWithPayment(payChatId, promptMsgId, orderId, "mixed", cash, transfer, bot)
                 return@text
             }
 

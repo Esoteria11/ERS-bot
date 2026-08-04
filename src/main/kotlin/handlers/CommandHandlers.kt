@@ -15,6 +15,8 @@ import ersbot.services.SubscriptionGuard
 import ersbot.config.mainMenuText
 import ersbot.keyboards.getMainMenuKeyboard
 import ersbot.keyboards.getCartKeyboard
+import services.getMonthlyStats
+import services.calculateSalary
 
 fun registerCommands(dispatcher: Dispatcher) {
     with(dispatcher) {
@@ -95,6 +97,35 @@ fun registerCommands(dispatcher: Dispatcher) {
                     replyMarkup = getCartKeyboard(cart)
                 )
             }
+        }
+
+        command("salary") {
+            val chatId = message.chat.id
+
+            if (chatId != BotConfig.ADMIN_ID) {
+                bot.sendMessage(ChatId.fromId(chatId), text = "⛔ Эта команда доступна только администратору.")
+                return@command
+            }
+
+            val stats = getMonthlyStats()
+            val salary = calculateSalary(stats.netScore)
+
+            val month = java.time.LocalDate.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale("ru")))
+
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = "📊 <b>Отчёт за $month</b>\n\n" +
+                        "📦 Завершено заказов: ${stats.orders}\n" +
+                        "🟢 Плюсы: ${stats.pluses}\n" +
+                        "🔴 Минусы: ${stats.minuses}\n" +
+                        "🟡 Нейтрально: ${stats.neutrals}\n" +
+                        "⚖️ Чистый баланс: ${stats.netScore}\n\n" +
+                        "💰 Текущая зарплата: <b>${salary} ₽</b>\n\n" +
+                        "💵 Наличными: ${stats.cashSum} ₽\n" +
+                        "💳 Переводами: ${stats.transferSum} ₽",
+                parseMode = ParseMode.HTML
+            )
         }
     }
 }
