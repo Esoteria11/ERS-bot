@@ -1,4 +1,6 @@
 package ersbot.models
+import java.time.LocalDateTime
+import java.time.Duration
 
 enum class UserState { IDLE, AWAITING_ADDRESS, AWAITING_DATETIME, AWAITING_REFERRAL_CODE }
 enum class AddressStep { SELECT_CITY, ENTER_STREET, ENTER_HOUSE, ENTER_FLAT, CONFIRM }
@@ -81,5 +83,57 @@ data class PendingOrder(
     val referralCode: String?,
     val deliveryType: String?,
     val address: String?,
-    val datetime: String?
-)
+    val datetime: String?,
+
+    val createdAt: LocalDateTime = LocalDateTime.now(),
+    val answeredAt: LocalDateTime? = null,
+    val assembledAt: LocalDateTime? = null,
+    val handedOverAt: LocalDateTime? = null,
+    val completedAt: LocalDateTime? = null,
+
+    val answerRating: Int? = null,
+    val assemblyRating: Int? = null,
+
+    val paymentType: String? = null,
+    val cashAmount: Int? = null,
+    val transferAmount: Int? = null
+) {
+    fun getAnswerTime(): Long? {
+        return if (answeredAt != null) Duration.between(createdAt, answeredAt).toMinutes() else null
+    }
+
+    fun getAssemblyTime(): Long? {
+        return if (assembledAt != null && answeredAt != null)
+            Duration.between(answeredAt, assembledAt).toMinutes()
+        else null
+    }
+}
+
+object OrderEvaluator {
+
+    fun evaluateAnswerTime(minutes: Long): Int {
+        return when {
+            minutes <= 4 -> 1
+            minutes <= 6 -> 0
+            else -> -1
+        }
+    }
+
+    fun evaluateAssemblyTime(minutes: Long): Int {
+        return when {
+            minutes <= 2 -> 1
+            minutes <= 4 -> 0
+            else -> -1
+        }
+    }
+
+    fun getRatingText(rating: Int): String {
+        return when (rating) {
+            1 -> "🟢 +"
+            0 -> "🟡 Нейтрально"
+            -1 -> "🔴 -"
+            else -> "❓"
+        }
+    }
+}
+

@@ -91,7 +91,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
             val scheduleText = """
                 🕒 <b>График работы магазина:</b>
                 
-                <b>Пн - Пт</b>: 08:00 - 01:00
+                <b>Пн - Пт</b>: 12:00 - 01:00
                 <b>Сб</b>: Круглосуточно
                 <b>Вс</b>: 08:00 - 01:00
             """.trimIndent()
@@ -638,7 +638,7 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 ChatId.fromId(BotConfig.ADMIN_ID),
                 text = adminText,
                 parseMode = ParseMode.HTML,
-                replyMarkup = getManagerOrderButtons(orderId)
+                replyMarkup = getManagerOrderButtons(orderId, "created")
             )
 
             val itemsList = cart.joinToString("\n") {
@@ -1003,77 +1003,6 @@ fun registerCallbacks(dispatcher: Dispatcher) {
 
         callbackQuery {
             val data = callbackQuery.data
-            if (!data.startsWith("admin_paid_")) return@callbackQuery
-
-            val orderId = data.removePrefix("admin_paid_")
-            val pendingOrder = BotState.pendingOrders[orderId] ?: return@callbackQuery
-
-            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
-            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
-
-            if (pendingOrder.discountUsed) {
-                consumeUserDiscount(pendingOrder.userId)
-            }
-
-            if (pendingOrder.referralCode != null) {
-                val referralResult = applyReferralCode(pendingOrder.referralCode!!)
-                if (referralResult != null) {
-                    val ownerId = referralResult.first
-                    val currentInvites = referralResult.second
-
-                    val congratulation = if (currentInvites == 5) {
-                        "🎉 <b>УРА!</b> По вашему коду оформили 5-й заказ!\nВам доступна <b>скидка 8% на следующий заказ</b>!"
-                    } else if (currentInvites < 5) {
-                        "🎉 Поздравляем! По вашему коду только что оформили заказ!\nДо получения скидки 8% осталось пригласить: <b>${5 - currentInvites} чел.</b> ($currentInvites/5)"
-                    } else {
-                        "🎉 По вашему промокоду оформили еще один заказ! Ваша скидка 8% активна."
-                    }
-
-                    bot.sendMessage(ChatId.fromId(ownerId), congratulation, parseMode = ParseMode.HTML)
-                }
-            }
-
-            val itemsText = pendingOrder.items.joinToString(", ") { "${it.brand} (${it.flavor})" }
-            saveOrderToHistory(
-                orderId = orderId,
-                userId = pendingOrder.userId,
-                username = pendingOrder.username,
-                items = itemsText,
-                totalAmount = pendingOrder.totalAmount,
-                deliveryType = pendingOrder.deliveryType,
-                referralCode = pendingOrder.referralCode
-            )
-
-            updateInventoryForOrder(pendingOrder.items)
-
-            BotState.pendingOrders.remove(orderId)
-
-            val itemsList = pendingOrder.items.joinToString("\n") {
-                item -> "• ${item.category} ${item.brand} — ${item.flavor} (${item.price} руб.)"
-            }
-
-            val orderDetails = "✅ <b>Заказ #$orderId подтверждён как успешный!</b>\n\n" +
-                    "👤 <b>Покупатель:</b> @${pendingOrder.username ?: "Скрыт (ID: ${pendingOrder.userId})"}\n" +
-                    "📦 <b>Товары:</b>\n$itemsList\n\n" +
-                    "💰 <b>Сумма:</b> ${pendingOrder.totalAmount} руб.\n\n" +
-                    "Реферальные бонусы начислены."
-
-            bot.editMessageText(
-                chatId = ChatId.fromId(chatId),
-                messageId = msgId,
-                text = orderDetails,
-                parseMode = ParseMode.HTML
-            )
-
-            bot.sendMessage(
-                ChatId.fromId(pendingOrder.chatId),
-                text = "✅ <b>Ваш заказ #$orderId подтверждён как успешный!</b>\n\nЕсли у вас остались вопросы, пожалуйста, свяжитесь с менеджером: @ERS_rrs",
-                parseMode = ParseMode.HTML
-            )
-        }
-
-        callbackQuery {
-            val data = callbackQuery.data
             if (!data.startsWith("admin_refused_")) return@callbackQuery
 
             val orderId = data.removePrefix("admin_refused_")
@@ -1097,7 +1026,249 @@ fun registerCallbacks(dispatcher: Dispatcher) {
                 parseMode = ParseMode.HTML
             )
         }
+
+        callbackQuery {
+            val data = callbackQuery.data
+            if (!data.startsWith("stage_answer_")) return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val orderId = data.removePrefix("stage_answer_")
+            val order = BotState.pendingOrders[orderId] ?: return@callbackQuery
+
+            val secondsSinceCreation = java.time.Duration.between(order.createdAt, java.time.LocalDateTime.now()).seconds
+            if (secondsSinceCreation < 30) {
+                val remaining = 30 - secondsSinceCreation
+                bot.answerCallbackQuery(callbackQuery.id, "⏳ Рано! Подождите ещё $remaining сек.", showAlert = true)
+                return@callbackQuery
+            }
+
+            val answerMinutes = java.time.Duration.between(order.createdAt, java.time.LocalDateTime.now()).toMinutes()
+            val rating = OrderEvaluator.evaluateAnswerTime(answerMinutes)
+
+            val updatedOrder = order.copy(
+                answeredAt = java.time.LocalDateTime.now(),
+                answerRating = rating
+            )
+            BotState.pendingOrders[orderId] = updatedOrder
+
+            val ratingText = OrderEvaluator.getRatingText(rating)
+            val message = "✅ Клиенту ответили за $answerMinutes мин. Оценка: $ratingText\n\n" +
+                    "Теперь соберите заказ и нажмите кнопку ниже:"
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = message,
+                parseMode = ParseMode.HTML,
+                replyMarkup = getManagerOrderButtons(orderId, "answered")
+            )
+        }
+
+        callbackQuery {
+            val data = callbackQuery.data
+            if (!data.startsWith("stage_assembled_")) return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val orderId = data.removePrefix("stage_assembled_")
+            val order = BotState.pendingOrders[orderId] ?: return@callbackQuery
+
+            val secondsSinceAnswer = java.time.Duration.between(order.answeredAt!!, java.time.LocalDateTime.now()).seconds
+            if (secondsSinceAnswer < 30) {
+                val remaining = 30 - secondsSinceAnswer
+                bot.answerCallbackQuery(callbackQuery.id, "⏳ Рано! Подождите ещё $remaining сек.", showAlert = true)
+                return@callbackQuery
+            }
+
+            val assemblyMinutes = java.time.Duration.between(order.answeredAt, java.time.LocalDateTime.now()).toMinutes()
+            val rating = OrderEvaluator.evaluateAssemblyTime(assemblyMinutes)
+
+            val updatedOrder = order.copy(
+                assembledAt = java.time.LocalDateTime.now(),
+                assemblyRating = rating
+            )
+            BotState.pendingOrders[orderId] = updatedOrder
+
+            val ratingText = OrderEvaluator.getRatingText(rating)
+            val message = "📦 Заказ собран за $assemblyMinutes мин. Оценка: $ratingText\n\n" +
+                    "Теперь выдайте заказ клиенту:"
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = message,
+                parseMode = ParseMode.HTML,
+                replyMarkup = getManagerOrderButtons(orderId, "assembled")
+            )
+        }
+
+        callbackQuery {
+            val data = callbackQuery.data
+            if (!data.startsWith("stage_handed_")) return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val orderId = data.removePrefix("stage_handed_")
+            val order = BotState.pendingOrders[orderId] ?: return@callbackQuery
+
+            val secondsSinceAssembly = java.time.Duration.between(order.assembledAt!!, java.time.LocalDateTime.now()).seconds
+            if (secondsSinceAssembly < 30) {
+                val remaining = 30 - secondsSinceAssembly
+                bot.answerCallbackQuery(callbackQuery.id, "⏳ Рано! Подождите ещё $remaining сек.", showAlert = true)
+                return@callbackQuery
+            }
+
+            val updatedOrder = order.copy(handedOverAt = java.time.LocalDateTime.now())
+            BotState.pendingOrders[orderId] = updatedOrder
+
+            val message = "🤝 Заказ выдан клиенту.\n\nТеперь примите оплату:"
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = message,
+                parseMode = ParseMode.HTML,
+                replyMarkup = getManagerOrderButtons(orderId, "handed")
+            )
+        }
+
+        callbackQuery {
+            val data = callbackQuery.data
+            if (!data.startsWith("stage_complete_")) return@callbackQuery
+
+            val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+            val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+            val orderId = data.removePrefix("stage_complete_")
+
+            val message = "💰 Выберите способ оплаты:"
+
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = msgId,
+                text = message,
+                parseMode = ParseMode.HTML,
+                replyMarkup = getPaymentTypeKeyboard(orderId)
+            )
+        }
+
+        callbackQuery {
+            val data = callbackQuery.data
+
+            if (data.startsWith("pay_cash_")) {
+                val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+                val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+                val orderId = data.removePrefix("pay_cash_")
+                completeOrderWithPayment(chatId, msgId, orderId, "cash", null, null, bot)
+            }
+            else if (data.startsWith("pay_transfer_")) {
+                val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+                val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+                val orderId = data.removePrefix("pay_transfer_")
+                completeOrderWithPayment(chatId, msgId, orderId, "transfer", null, null, bot)
+            }
+            else if (data.startsWith("pay_mixed_")) {
+                val chatId = callbackQuery.message?.chat?.id ?: return@callbackQuery
+                val msgId = callbackQuery.message?.messageId ?: return@callbackQuery
+                val orderId = data.removePrefix("pay_mixed_")
+
+                BotState.mixedPaymentState[chatId] = orderId to msgId
+
+                bot.editMessageText(
+                    chatId = ChatId.fromId(chatId),
+                    messageId = msgId,
+                    text = "🔀 Смешанная оплата.\n\nВведите сумму наличными и переводом в формате:\n<b>500 1000</b>\n(где 500 - наличные, 1000 - перевод)",
+                    parseMode = ParseMode.HTML
+                )
+            }
+        }
     }
+}
+
+fun completeOrderWithPayment(
+    chatId: Long,
+    msgId: Long,
+    orderId: String,
+    paymentType: String,
+    cashAmount: Int?,
+    transferAmount: Int?,
+    bot: Bot
+) {
+    val order = BotState.pendingOrders[orderId] ?: return
+
+    if (order.discountUsed) {
+        consumeUserDiscount(order.userId)
+    }
+
+    if (order.referralCode != null) {
+        val referralResult = applyReferralCode(order.referralCode!!)
+        if (referralResult != null) {
+            val ownerId = referralResult.first
+            val currentInvites = referralResult.second
+
+            val congratulation = if (currentInvites == 5) {
+                "🎉 <b>УРА!</b> По вашему коду оформили 5-й заказ!\nВам доступна <b>скидка 8% на следующий заказ</b>!"
+            } else if (currentInvites < 5) {
+                "🎉 Поздравляем! По вашему коду только что оформили заказ!\nДо получения скидки 8% осталось пригласить: <b>${5 - currentInvites} чел.</b> ($currentInvites/5)"
+            } else {
+                "🎉 По вашему промокоду оформили еще один заказ! Ваша скидка 8% активна."
+            }
+
+            bot.sendMessage(ChatId.fromId(ownerId), congratulation, parseMode = ParseMode.HTML)
+        }
+    }
+
+    val itemsText = order.items.joinToString(", ") { "${it.brand} (${it.flavor})" }
+    saveOrderToHistory(
+        orderId = orderId,
+        userId = order.userId,
+        username = order.username,
+        items = itemsText,
+        totalAmount = order.totalAmount,
+        deliveryType = order.deliveryType,
+        referralCode = order.referralCode
+    )
+
+    updateInventoryForOrder(order.items)
+
+    val updatedOrder = order.copy(
+        completedAt = java.time.LocalDateTime.now(),
+        paymentType = paymentType,
+        cashAmount = cashAmount,
+        transferAmount = transferAmount
+    )
+    saveOrderMetrics(updatedOrder)
+
+    BotState.pendingOrders.remove(orderId)
+
+    val paymentText = when (paymentType) {
+        "cash" -> "💵 Наличные"
+        "transfer" -> "💳 Перевод"
+        "mixed" -> "🔀 Смешанная (${cashAmount}₽ наличные + ${transferAmount}₽ перевод)"
+        else -> "Неизвестно"
+    }
+
+    val answerText = order.answerRating?.let { OrderEvaluator.getRatingText(it) } ?: "—"
+    val assemblyText = order.assemblyRating?.let { OrderEvaluator.getRatingText(it) } ?: "—"
+
+    val message = "✅ <b>Заказ #$orderId завершён!</b>\n\n" +
+            "💰 Оплата: $paymentText\n" +
+            "📊 Сумма: ${order.totalAmount}₽\n\n" +
+            "✅ Ответ клиенту: $answerText\n" +
+            "📦 Сборка: $assemblyText"
+
+    bot.editMessageText(
+        chatId = ChatId.fromId(chatId),
+        messageId = msgId,
+        text = message,
+        parseMode = ParseMode.HTML
+    )
+
+    bot.sendMessage(
+        ChatId.fromId(order.chatId),
+        text = "✅ <b>Ваш заказ #$orderId подтверждён!</b>\n\nЕсли у вас остались вопросы, свяжитесь с менеджером: @ERS_rrs",
+        parseMode = ParseMode.HTML
+    )
 }
 
 private fun checkSubAndReturn(bot: Bot, callbackQuery: com.github.kotlintelegrambot.entities.CallbackQuery): Boolean {

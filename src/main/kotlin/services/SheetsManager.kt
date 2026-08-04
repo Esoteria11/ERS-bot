@@ -9,6 +9,7 @@ import com.google.auth.http.HttpCredentialsAdapter
 import com.google.auth.oauth2.ServiceAccountCredentials
 import ersbot.models.ProductDetails
 import ersbot.config.BotConfig
+import ersbot.models.PendingOrder
 
 private fun createSheetsService(): Sheets {
     val credentialStream = object {}.javaClass.getResourceAsStream("/credentials.json")
@@ -299,12 +300,6 @@ fun getWeeklyOrders(): List<Map<String, String>> {
     return orders
 }
 
-/**
- * Обновляет количество товара после успешного заказа
- * @param brand - название бренда (например, "WAKA EXTRA - PA20.000 100MG")
- * @param flavor - вкус с количеством (например, "АРБУЗ СО ЛЬДОМ 1шт")
- * @return true если успешно обновлено, false если товар не найден
- */
 fun updateInventoryAfterOrder(brand: String, flavor: String): Boolean {
     val spreadsheetId = BotConfig.SHEETS_ID
     val sheetName = "Наличие"
@@ -392,4 +387,121 @@ fun updateInventoryForOrder(items: List<ersbot.models.CartItem>): Map<String, Bo
     }
 
     return results
+}
+
+data class MonthlyStats(
+    val orders: Int,
+    val pluses: Int,
+    val minuses: Int,
+    val neutrals: Int,
+    val netScore: Int,
+    val cashSum: Int,
+    val transferSum: Int
+)
+
+fun saveOrderMetrics(order: PendingOrder) {
+    val spreadsheetId = BotConfig.SHEETS_ID
+    val sheetName = "OrderMetrics"
+
+    val answerMinutes = if (order.answeredAt != null)
+        java.time.Duration.between(order.createdAt, order.answeredAt).toMinutes() else null
+
+    val assemblyMinutes = if (order.answeredAt != null && order.assembledAt != null)
+        java.time.Duration.between(order.answeredAt, order.assembledAt).toMinutes() else null
+
+    val month = java.time.LocalDate.now()
+        .format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale("ru")))
+
+    val paymentTextForSheet = when (order.paymentType) {
+        "cash" -> "Наличные"
+        "transfer" -> "Перевод"
+        "mixed" -> "Смешанная"
+        else -> ""
+    }
+
+    val newRow = listOf(
+        java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+        month,
+        order.orderId,
+        answerMinutes?.toString() ?: "",
+        order.answerRating?.toString() ?: "",
+        assemblyMinutes?.toString() ?: "",
+        order.assemblyRating?.toString() ?: "",
+        paymentTextForSheet,
+        order.cashAmount?.toString() ?: "",
+        order.transferAmount?.toString() ?: "",
+        order.totalAmount.toString()
+    )
+
+    val sheetsService = createSheetsService()
+    val body = ValueRange().setValues(listOf(newRow))
+    sheetsService.spreadsheets().values()
+        .append(spreadsheetId, "$sheetName!A1", body)
+        .setValueInputOption("USER_ENTERED")
+        .execute()
+
+    println("✅ Метрики заказа ${order.orderId} записаны в OrderMetrics")
+}
+
+fun getMonthlyStats(): MonthlyStats {
+    val spreadsheetId = BotConfig.SHEETS_ID
+    val sheetName = "OrderMetrics"
+    val range = "$sheetName!A2:K"
+
+    val sheetsService = createSheetsService()
+    val response = sheetsService.spreadsheets().values().get(spreadsheetId, range).execute()
+    val rows = response.getValues() ?: return MonthlyStats(0, 0, 0, 0, 0, 0, 0)
+
+    val currentMonth = java.time.LocalDate.now()
+        .format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale("ru")))
+
+    var orders = 0; var pluses = 0; var minuses = 0; var neutrals = 0
+    var netScore = 0; var cashSum = 0; var transferSum = 0
+
+    for (row in rows) {
+        if (row.size < 11) continue
+        if (row[1].toString().trim() != currentMonth) continue
+
+        orders++
+
+        val answerRating = row[4].toString().toIntOrNull() ?: 0
+        val assemblyRating = row[6].toString().toIntOrNull() ?: 0
+
+        for (r in listOf(answerRating, assemblyRating)) {
+            when (r) {
+                1 -> pluses++
+                -1 -> minuses++
+                else -> neutrals++
+            }
+            netScore += r
+        }
+
+        val total = row[10].toString().toIntOrNull() ?: 0
+        when (row[7].toString().trim()) {
+            "Наличные" -> cashSum += total
+            "Перевод" -> transferSum += total
+            "Смешанная" -> {
+                cashSum += row[8].toString().toIntOrNull() ?: 0
+                transferSum += row[9].toString().toIntOrNull() ?: 0
+            }
+        }
+    }
+
+    return MonthlyStats(orders, pluses, minuses, neutrals, netScore, cashSum, transferSum)
+}
+
+fun calculateSalary(score: Int): Int {
+    return when (score) {
+        in 0..15 -> 5000
+        in 16..31 -> 5500
+        in 32..47 -> 6000
+        in 48..63 -> 6500
+        in 64..71 -> 7000
+        in 72..79 -> 7500
+        in 80..95 -> 8000
+        in 96..111 -> 8500
+        in 112..127 -> 9000
+        in 128..143 -> 9500
+        else -> if (score >= 144) 10000 else 5000
+    }
 }
